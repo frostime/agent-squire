@@ -21,7 +21,10 @@ hi
     assert!(results[0].success);
     assert_eq!(results[0].status, "applied");
     assert_eq!(results[0].match_mode.as_deref(), Some("exact"));
-    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "hi\nworld\n");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "hi\nworld\n"
+    );
 }
 
 #[test]
@@ -39,7 +42,10 @@ hi
 
     let results = apply_patches(patch, dir.path(), true);
     assert!(results[0].success);
-    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "hello\n");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "hello\n"
+    );
 }
 
 #[test]
@@ -77,7 +83,10 @@ beta
     let results = apply_patches(patch, dir.path(), false);
     assert!(results[0].success);
     assert_eq!(results[0].match_mode.as_deref(), Some("loose"));
-    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "beta\n");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "beta\n"
+    );
 }
 
 #[test]
@@ -96,7 +105,10 @@ other
     let results = apply_patches(patch, dir.path(), false);
     assert!(results[0].success);
     assert_eq!(results[0].match_line, Some(4));
-    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "x\nsame\nx\nother\n");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "x\nsame\nx\nother\n"
+    );
 }
 
 #[test]
@@ -131,7 +143,10 @@ hello
 
     let results = apply_patches(patch, dir.path(), false);
     assert!(results[0].success);
-    assert_eq!(fs::read_to_string(dir.path().join("new.txt")).unwrap(), "hello\n");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("new.txt")).unwrap(),
+        "hello\n"
+    );
 
     let again = apply_patches(patch, dir.path(), false);
     assert!(again[0].success);
@@ -178,7 +193,10 @@ TWO
     let results = apply_patches(patch, dir.path(), false);
     assert_eq!(results.len(), 2);
     assert!(results.iter().all(|r| r.success));
-    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "ONE\nTWO\nthree\n");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "ONE\nTWO\nthree\n"
+    );
 }
 
 #[test]
@@ -209,5 +227,8 @@ C
     assert_eq!(results.len(), 2);
     assert!(results.iter().all(|r| !r.success));
     assert!(results.iter().all(|r| r.status == "overlap_conflict"));
-    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "a\nb\nc\n");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "a\nb\nc\n"
+    );
 }

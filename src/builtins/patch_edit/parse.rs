@@ -11,8 +11,13 @@ const OVERWRITE_MARK: &str = "<<<<<<< OVERWRITE";
 const DELIM_MARK: &str = "=======";
 const REPLACE_MARK: &str = ">>>>>>> REPLACE";
 
-pub fn parse_patches(patch_text: &str, project_root: &Path) -> Result<Vec<PatchBlock>, Vec<String>> {
-    let root = project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf());
+pub fn parse_patches(
+    patch_text: &str,
+    project_root: &Path,
+) -> Result<Vec<PatchBlock>, Vec<String>> {
+    let root = project_root
+        .canonicalize()
+        .unwrap_or_else(|_| project_root.to_path_buf());
     let lines = split_lines_keepends(patch_text);
     let roles = (0..lines.len())
         .map(|idx| classify_line(&lines, idx))
@@ -34,7 +39,11 @@ pub fn parse_patches(patch_text: &str, project_root: &Path) -> Result<Vec<PatchB
         let (file_path, display_path, line_range) = match parse_patch_header(file_line, &root) {
             Ok(v) => v,
             Err(err) => {
-                errors.push(format!("Line {}: Failed to parse patch header: {} ({err})", file_line_idx + 1, file_line));
+                errors.push(format!(
+                    "Line {}: Failed to parse patch header: {} ({err})",
+                    file_line_idx + 1,
+                    file_line
+                ));
                 continue;
             }
         };
@@ -42,7 +51,11 @@ pub fn parse_patches(patch_text: &str, project_root: &Path) -> Result<Vec<PatchB
         let operation = match parse_patch_operation(opener_line) {
             Some(op) => op,
             None => {
-                errors.push(format!("Line {}: Invalid patch opener: {}", opener_line_idx + 1, opener_line));
+                errors.push(format!(
+                    "Line {}: Invalid patch opener: {}",
+                    opener_line_idx + 1,
+                    opener_line
+                ));
                 continue;
             }
         };
@@ -52,7 +65,13 @@ pub fn parse_patches(patch_text: &str, project_root: &Path) -> Result<Vec<PatchB
         let search_content = lines[search_range.start()..search_range.end()].concat();
         let replace_content = lines[replace_range.start()..replace_range.end()].concat();
 
-        if let Some(err) = validate_patch_block(&operation, &display_path, &file_path, line_range, &search_content) {
+        if let Some(err) = validate_patch_block(
+            &operation,
+            &display_path,
+            &file_path,
+            line_range,
+            &search_content,
+        ) {
             errors.push(format!("Line {}: {err}", file_line_idx + 1));
             continue;
         }
@@ -72,7 +91,11 @@ pub fn parse_patches(patch_text: &str, project_root: &Path) -> Result<Vec<PatchB
         errors.push("No valid patch blocks found. Ensure each block starts with '# <path>' followed by a SEARCH/REPLACE block.".into());
     }
 
-    if errors.is_empty() { Ok(patches) } else { Err(errors) }
+    if errors.is_empty() {
+        Ok(patches)
+    } else {
+        Err(errors)
+    }
 }
 
 fn classify_line(lines: &[String], index: usize) -> char {
@@ -106,7 +129,11 @@ fn is_patch_header_line(lines: &[String], index: usize) -> bool {
         next += 1;
     }
 
-    next < lines.len() && matches!(strip_line_ending(&lines[next]), SEARCH_MARK | CREATE_MARK | OVERWRITE_MARK)
+    next < lines.len()
+        && matches!(
+            strip_line_ending(&lines[next]),
+            SEARCH_MARK | CREATE_MARK | OVERWRITE_MARK
+        )
 }
 
 fn parse_patch_operation(line: &str) -> Option<PatchOperation> {
@@ -129,13 +156,22 @@ fn validate_patch_block(
         return Some(format!("Not a file: {display_path}"));
     }
 
-    if matches!(operation, PatchOperation::Create | PatchOperation::Overwrite) {
+    if matches!(
+        operation,
+        PatchOperation::Create | PatchOperation::Overwrite
+    ) {
         if line_range.is_some() {
-            return Some(format!("Line range is only supported for SEARCH patches, got {}: {display_path}", operation_name(operation)));
+            return Some(format!(
+                "Line range is only supported for SEARCH patches, got {}: {display_path}",
+                operation_name(operation)
+            ));
         }
 
         if !search_content.trim().is_empty() {
-            return Some(format!("{} upper block must be whitespace-only: {display_path}", operation_name(operation)));
+            return Some(format!(
+                "{} upper block must be whitespace-only: {display_path}",
+                operation_name(operation)
+            ));
         }
     }
 
@@ -168,7 +204,9 @@ fn parse_patch_header(
     Ok((file_path, display_path, line_range))
 }
 
-fn parse_patch_header_text(text: &str) -> Result<(String, Option<(Option<usize>, Option<usize>)>), String> {
+fn parse_patch_header_text(
+    text: &str,
+) -> Result<(String, Option<(Option<usize>, Option<usize>)>), String> {
     if text.is_empty() {
         return Err(format!("Invalid patch header: {text}"));
     }
@@ -190,7 +228,9 @@ fn parse_patch_header_text(text: &str) -> Result<(String, Option<(Option<usize>,
 
 pub fn parse_line_range(text: &str) -> Result<(Option<usize>, Option<usize>), String> {
     let parse_n = |s: &str| -> Result<usize, String> {
-        let n = s.parse::<usize>().map_err(|_| format!("Invalid line range: {text}"))?;
+        let n = s
+            .parse::<usize>()
+            .map_err(|_| format!("Invalid line range: {text}"))?;
         if n == 0 {
             Err(format!("Invalid line range: {text}"))
         } else {

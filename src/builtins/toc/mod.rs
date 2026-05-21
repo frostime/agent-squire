@@ -9,12 +9,19 @@ use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
 #[derive(Args, Debug)]
-#[command(long_about = "Pre-scan Markdown files before reading. Outputs file size metadata and heading structure with 1-based line numbers.")]
+#[command(
+    long_about = "Pre-scan Markdown files before reading. Outputs file size metadata and heading structure with 1-based line numbers."
+)]
 pub struct TocArgs {
     #[arg(default_value = ".", help = "File, directory, or glob pattern")]
     pub source: String,
 
-    #[arg(long, default_value_t = 6, value_name = "N", help = "Maximum heading depth, clamped to 1..6")]
+    #[arg(
+        long,
+        default_value_t = 6,
+        value_name = "N",
+        help = "Maximum heading depth, clamped to 1..6"
+    )]
     pub depth: usize,
 }
 
@@ -54,7 +61,11 @@ pub fn run(args: TocArgs, ctx: &CommandContext) -> Result<u8> {
 
     let base = {
         let p = PathBuf::from(&args.source);
-        if p.is_dir() { Some(p) } else { None }
+        if p.is_dir() {
+            Some(p)
+        } else {
+            None
+        }
     };
 
     let results = files
@@ -209,7 +220,10 @@ fn parse_headings(content: &str, max_depth: usize) -> Vec<Heading> {
 fn format_toc(toc: &FileToc) -> String {
     let mut lines = Vec::new();
     lines.push(format!("=== {} ===", toc.path));
-    lines.push(format!("chars: {} | lines: {}", toc.char_count, toc.line_count));
+    lines.push(format!(
+        "chars: {} | lines: {}",
+        toc.char_count, toc.line_count
+    ));
 
     if let Some(error) = &toc.error {
         lines.push(format!("ERROR: {error}"));
@@ -227,7 +241,10 @@ fn format_toc(toc: &FileToc) -> String {
     for heading in &toc.headings {
         let indent = "  ".repeat(heading.level - min_level);
         let hashes = "#".repeat(heading.level);
-        lines.push(format!("L{:<5} {}{} {}", heading.line_num, indent, hashes, heading.text));
+        lines.push(format!(
+            "L{:<5} {}{} {}",
+            heading.line_num, indent, hashes, heading.text
+        ));
     }
 
     lines.join("\n") + "\n"

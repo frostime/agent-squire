@@ -36,7 +36,10 @@ pub fn read_target_text_with_encoding(path: &Path) -> Result<(String, TextEncodi
         return Ok((cow.into_owned(), TextEncoding::Windows1252));
     }
 
-    Ok((String::from_utf8_lossy(&raw).into_owned(), TextEncoding::Utf8))
+    Ok((
+        String::from_utf8_lossy(&raw).into_owned(),
+        TextEncoding::Utf8,
+    ))
 }
 
 pub fn atomic_write_text(path: &Path, text: &str, encoding: TextEncoding) -> Result<()> {

@@ -21,7 +21,9 @@ pub fn detect_newline_style(text: &str) -> &'static str {
 }
 
 pub fn convert_newlines(text: &str, newline: &str) -> String {
-    text.replace("\r\n", "\n").replace('\r', "\n").replace('\n', newline)
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', newline)
 }
 
 pub fn split_lines_keepends(text: &str) -> Vec<String> {
@@ -32,7 +34,11 @@ pub fn split_lines_keepends(text: &str) -> Vec<String> {
 
     while i < bytes.len() {
         if bytes[i] == b'\r' {
-            let end = if i + 1 < bytes.len() && bytes[i + 1] == b'\n' { i + 2 } else { i + 1 };
+            let end = if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                i + 2
+            } else {
+                i + 1
+            };
             lines.push(text[start..end].to_string());
             i = end;
             start = end;

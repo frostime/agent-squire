@@ -34,12 +34,20 @@ pub fn print_compact(results: &[PatchApplyResult], dry_run: bool) {
         if let Some(patch) = &result.patch {
             let status = if result.success { "[OK]" } else { "[X]" };
             let header = if let Some((start, end)) = patch.line_range {
-                format!("# {}:{}", patch.display_path, format_range(Some((start, end))))
+                format!(
+                    "# {}:{}",
+                    patch.display_path,
+                    format_range(Some((start, end)))
+                )
             } else {
                 format!("# {}", patch.display_path)
             };
             let mut note = result.error.clone().unwrap_or_else(|| {
-                if result.status == "applied" { action.into() } else { result.status.clone() }
+                if result.status == "applied" {
+                    action.into()
+                } else {
+                    result.status.clone()
+                }
             });
             if let Some(line) = result.match_line {
                 let mode = result.match_mode.as_deref().unwrap_or("-");
@@ -47,7 +55,10 @@ pub fn print_compact(results: &[PatchApplyResult], dry_run: bool) {
             }
             println!("{status} {:<18} {} -- {}", result.status, header, note);
         } else {
-            println!("[X] parse_error -- {}", result.error.as_deref().unwrap_or("unknown parse error"));
+            println!(
+                "[X] parse_error -- {}",
+                result.error.as_deref().unwrap_or("unknown parse error")
+            );
         }
     }
 

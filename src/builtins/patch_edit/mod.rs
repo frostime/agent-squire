@@ -63,12 +63,19 @@ Rules:
 "#;
 
 #[derive(Args, Debug)]
-#[command(long_about = "Apply SEARCH/REPLACE patch blocks. The patch argument supports literal text, @stdin, @file:path, and @env:NAME.")]
+#[command(
+    long_about = "Apply SEARCH/REPLACE patch blocks. The patch argument supports literal text, @stdin, @file:path, and @env:NAME."
+)]
 pub struct PatchEditArgs {
     #[arg(help = "Patch content or input source: literal, @stdin, @file:path, @env:NAME")]
     pub patch: Option<String>,
 
-    #[arg(short = 'f', long = "file", value_name = "PATH", help = "Read patch text from a file")]
+    #[arg(
+        short = 'f',
+        long = "file",
+        value_name = "PATH",
+        help = "Read patch text from a file"
+    )]
     pub file: Option<std::path::PathBuf>,
 
     #[arg(long, help = "Read patch text from stdin")]

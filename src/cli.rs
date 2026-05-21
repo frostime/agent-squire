@@ -24,7 +24,12 @@ pub struct CommandContext {
     long_about = "Agent Squire packages useful local tools and external command mappings behind a predictable CLI interface for humans and agents."
 )]
 pub struct Cli {
-    #[arg(long, global = true, value_name = "DIR", help = "Run as if Squire was started in DIR")]
+    #[arg(
+        long,
+        global = true,
+        value_name = "DIR",
+        help = "Run as if Squire was started in DIR"
+    )]
     pub cwd: Option<PathBuf>,
 
     #[arg(
@@ -49,13 +54,20 @@ pub enum CliCommand {
     #[command(alias = "view-tree", about = "Show a project directory tree")]
     Tree(builtins::tree::TreeArgs),
 
-    #[command(alias = "fileinfo", about = "Inspect file metadata and text/binary format")]
+    #[command(
+        alias = "fileinfo",
+        about = "Inspect file metadata and text/binary format"
+    )]
     Info(builtins::info::InfoArgs),
 
     #[command(alias = "mdtoc", about = "Show Markdown headings with line numbers")]
     Toc(builtins::toc::TocArgs),
 
-    #[command(name = "patch-edit", alias = "patch", about = "Apply SEARCH/REPLACE patch blocks")]
+    #[command(
+        name = "patch-edit",
+        alias = "patch",
+        about = "Apply SEARCH/REPLACE patch blocks"
+    )]
     PatchEdit(builtins::patch_edit::PatchEditArgs),
 
     #[command(about = "List built-in and mapped commands")]

@@ -114,9 +114,9 @@ pub fn run_mapped(name: &str, args: Vec<OsString>, ctx: &CommandContext) -> Resu
 
     for arg in args {
         if mapped.expand_args {
-            let s = arg
-                .to_str()
-                .ok_or_else(|| anyhow::anyhow!("mapped command args must be valid UTF-8 when expand_args = true"))?;
+            let s = arg.to_str().ok_or_else(|| {
+                anyhow::anyhow!("mapped command args must be valid UTF-8 when expand_args = true")
+            })?;
             command.arg(input::expand_arg_source(s)?);
         } else {
             command.arg(arg);

@@ -18,7 +18,9 @@ const LINE_COUNT_LIMIT: u64 = 1024 * 1024;
 const GLOB_CHARS: &[char] = &['*', '?', '['];
 
 #[derive(Args, Debug)]
-#[command(long_about = "Inspect one or more files. Supports files, directories, and glob patterns. Directories are expanded recursively.")]
+#[command(
+    long_about = "Inspect one or more files. Supports files, directories, and glob patterns. Directories are expanded recursively."
+)]
 pub struct InfoArgs {
     #[arg(help = "Files, directories, or glob patterns")]
     pub sources: Vec<String>,
@@ -84,7 +86,10 @@ pub fn run(args: InfoArgs, ctx: &CommandContext) -> Result<u8> {
         }
         _ => {
             println!("File Info ({} file(s))", infos.len());
-            println!("{:<42} {:<7} {:>10} {:<12} {:<10} {:<8} {:>8}", "Path", "Kind", "Size", "Encoding", "BOM", "Newline", "Lines");
+            println!(
+                "{:<42} {:<7} {:>10} {:<12} {:<10} {:<8} {:>8}",
+                "Path", "Kind", "Size", "Encoding", "BOM", "Newline", "Lines"
+            );
             for info in &infos {
                 println!(
                     "{:<42} {:<7} {:>10} {:<12} {:<10} {:<8} {:>8}",
@@ -94,7 +99,9 @@ pub fn run(args: InfoArgs, ctx: &CommandContext) -> Result<u8> {
                     info.encoding,
                     info.bom,
                     info.newline,
-                    info.line_count.map(|n| n.to_string()).unwrap_or_else(|| "-".into())
+                    info.line_count
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "-".into())
                 );
             }
             if !missing.is_empty() {
@@ -106,8 +113,15 @@ pub fn run(args: InfoArgs, ctx: &CommandContext) -> Result<u8> {
     Ok(0)
 }
 
-fn resolve_sources(sources: &[String], max_files: Option<usize>) -> Result<(Vec<PathBuf>, Vec<String>)> {
-    let effective = if sources.is_empty() { vec![".".to_string()] } else { sources.to_vec() };
+fn resolve_sources(
+    sources: &[String],
+    max_files: Option<usize>,
+) -> Result<(Vec<PathBuf>, Vec<String>)> {
+    let effective = if sources.is_empty() {
+        vec![".".to_string()]
+    } else {
+        sources.to_vec()
+    };
     let mut ordered: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
     let mut missing = Vec::new();
 
@@ -148,7 +162,11 @@ fn resolve_sources(sources: &[String], max_files: Option<usize>) -> Result<(Vec<
     Ok((ordered.into_values().collect(), missing))
 }
 
-fn add_existing(ordered: &mut BTreeMap<PathBuf, PathBuf>, path: &Path, max_files: Option<usize>) -> Result<()> {
+fn add_existing(
+    ordered: &mut BTreeMap<PathBuf, PathBuf>,
+    path: &Path,
+    max_files: Option<usize>,
+) -> Result<()> {
     if max_files.is_some_and(|n| ordered.len() >= n) {
         return Ok(());
     }
@@ -160,7 +178,11 @@ fn add_existing(ordered: &mut BTreeMap<PathBuf, PathBuf>, path: &Path, max_files
     }
 
     if path.is_dir() {
-        for entry in WalkDir::new(path).sort_by_file_name().into_iter().filter_map(Result::ok) {
+        for entry in WalkDir::new(path)
+            .sort_by_file_name()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
             if max_files.is_some_and(|n| ordered.len() >= n) {
                 break;
             }
@@ -177,7 +199,8 @@ fn add_existing(ordered: &mut BTreeMap<PathBuf, PathBuf>, path: &Path, max_files
 
 fn inspect_file(path: &Path) -> Result<FileInfo> {
     let stat = fs::metadata(path).with_context(|| format!("failed to stat {}", path.display()))?;
-    let mut sample = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let mut sample =
+        fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
     if sample.len() as u64 > TEXT_SAMPLE_BYTES {
         sample.truncate(TEXT_SAMPLE_BYTES as usize);
     }
@@ -188,13 +211,20 @@ fn inspect_file(path: &Path) -> Result<FileInfo> {
     let newline = detect_newline(&sample, is_binary);
     let line_count = count_lines(path, &encoding, stat.len(), is_binary);
 
-    let modified: DateTime<Local> = stat.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).into();
+    let modified: DateTime<Local> = stat
+        .modified()
+        .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+        .into();
 
     Ok(FileInfo {
         path: display_path(path),
         size_bytes: stat.len(),
         modified: modified.to_rfc3339_opts(SecondsFormat::Secs, false),
-        kind: if is_binary { "binary".into() } else { "text".into() },
+        kind: if is_binary {
+            "binary".into()
+        } else {
+            "text".into()
+        },
         encoding,
         bom,
         newline,
@@ -289,7 +319,12 @@ fn count_lines(path: &Path, encoding: &str, size_bytes: u64, is_binary: bool) ->
     let raw = fs::read(path).ok()?;
     let text = match encoding {
         "utf-8" => String::from_utf8(raw).ok()?,
-        "utf-8-sig" => String::from_utf8(raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw).to_vec()).ok()?,
+        "utf-8-sig" => String::from_utf8(
+            raw.strip_prefix(&[0xEF, 0xBB, 0xBF])
+                .unwrap_or(&raw)
+                .to_vec(),
+        )
+        .ok()?,
         "gbk" => {
             let (cow, _, had_errors) = GBK.decode(&raw);
             if had_errors {

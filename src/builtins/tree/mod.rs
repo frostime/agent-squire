@@ -9,14 +9,32 @@ use serde::Serialize;
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
-const ALWAYS_SKIP: &[&str] = &[".git", "__pycache__", "node_modules", ".pytest_cache", ".mypy_cache"];
+const ALWAYS_SKIP: &[&str] = &[
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".pytest_cache",
+    ".mypy_cache",
+];
 const FALLBACK_SKIP: &[&str] = &[
-    ".git", "__pycache__", "node_modules", ".pytest_cache", ".mypy_cache",
-    ".ruff_cache", ".venv", "venv", ".env", "dist", ".tox", ".eggs",
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    ".env",
+    "dist",
+    ".tox",
+    ".eggs",
 ];
 
 #[derive(Args, Debug)]
-#[command(long_about = "Display a directory tree. Respects .gitignore when possible and always hides common noise such as .git and node_modules unless --no-gitignore is used.")]
+#[command(
+    long_about = "Display a directory tree. Respects .gitignore when possible and always hides common noise such as .git and node_modules unless --no-gitignore is used."
+)]
 pub struct TreeArgs {
     #[arg(default_value = ".", help = "Directory to display")]
     pub path: PathBuf,
@@ -36,7 +54,12 @@ pub struct TreeArgs {
     #[arg(long, help = "Show line/character counts for UTF-8 text files")]
     pub detail: bool,
 
-    #[arg(short = 'o', long, value_name = "PATH", help = "Write compact output to a file")]
+    #[arg(
+        short = 'o',
+        long,
+        value_name = "PATH",
+        help = "Write compact output to a file"
+    )]
     pub output: Option<PathBuf>,
 }
 
@@ -83,7 +106,10 @@ pub fn run(args: TreeArgs, ctx: &CommandContext) -> Result<u8> {
     let filter = IgnoreFilter::new(&path, opts.no_gitignore);
     let stats = collect_stats(&path, &opts, &filter)?;
     let mut lines = Vec::new();
-    lines.push(format!("{}/", path.file_name().and_then(|s| s.to_str()).unwrap_or(".")));
+    lines.push(format!(
+        "{}/",
+        path.file_name().and_then(|s| s.to_str()).unwrap_or(".")
+    ));
     render_children(&path, &opts, &filter, 0, "", &mut lines)?;
 
     match ctx.print {
@@ -112,7 +138,8 @@ pub fn run(args: TreeArgs, ctx: &CommandContext) -> Result<u8> {
                 format_size(stats.total_size as f64)
             ));
             if let Some(path) = args.output {
-                fs::write(&path, text).with_context(|| format!("failed to write {}", path.display()))?;
+                fs::write(&path, text)
+                    .with_context(|| format!("failed to write {}", path.display()))?;
                 println!("[OK] Saved to: {}", path.display());
             } else {
                 print!("{text}");
@@ -131,7 +158,10 @@ struct IgnoreFilter {
 impl IgnoreFilter {
     fn new(start: &Path, no_gitignore: bool) -> Self {
         if no_gitignore {
-            return Self { no_gitignore, gitignore: None };
+            return Self {
+                no_gitignore,
+                gitignore: None,
+            };
         }
 
         let root = find_project_root(start).unwrap_or_else(|| start.to_path_buf());
@@ -142,7 +172,10 @@ impl IgnoreFilter {
         }
 
         let gitignore = builder.build().ok();
-        Self { no_gitignore, gitignore }
+        Self {
+            no_gitignore,
+            gitignore,
+        }
     }
 
     fn should_skip(&self, path: &Path) -> bool {
@@ -156,7 +189,10 @@ impl IgnoreFilter {
         }
 
         if let Some(gi) = &self.gitignore {
-            if gi.matched_path_or_any_parents(path, path.is_dir()).is_ignore() {
+            if gi
+                .matched_path_or_any_parents(path, path.is_dir())
+                .is_ignore()
+            {
                 return true;
             }
         } else if path.is_dir() && FALLBACK_SKIP.contains(&name) {
@@ -222,7 +258,11 @@ fn render_children(
     for (idx, path) in visible.iter().enumerate() {
         let is_last = idx + 1 == visible.len();
         let connector = if is_last { "└── " } else { "├── " };
-        let mut label = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+        let mut label = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
 
         if path.is_dir() {
             label.push('/');
@@ -251,12 +291,21 @@ fn render_children(
 }
 
 fn collect_stats(root: &Path, opts: &TreeOptions, filter: &IgnoreFilter) -> Result<Stats> {
-    let mut stats = Stats { files: 0, directories: 0, total_size: 0 };
+    let mut stats = Stats {
+        files: 0,
+        directories: 0,
+        total_size: 0,
+    };
     collect_stats_inner(root, opts, filter, &mut stats)?;
     Ok(stats)
 }
 
-fn collect_stats_inner(root: &Path, opts: &TreeOptions, filter: &IgnoreFilter, stats: &mut Stats) -> Result<()> {
+fn collect_stats_inner(
+    root: &Path,
+    opts: &TreeOptions,
+    filter: &IgnoreFilter,
+    stats: &mut Stats,
+) -> Result<()> {
     for path in sorted_children(root, filter)? {
         if path.is_dir() {
             stats.directories += 1;
@@ -275,7 +324,8 @@ fn count_text_stats(path: &Path) -> (usize, usize) {
     let Ok(content) = fs::read_to_string(path) else {
         return (0, 0);
     };
-    let lines = content.matches('\n').count() + usize::from(!content.is_empty() && !content.ends_with('\n'));
+    let lines = content.matches('\n').count()
+        + usize::from(!content.is_empty() && !content.ends_with('\n'));
     (lines, content.chars().count())
 }
 

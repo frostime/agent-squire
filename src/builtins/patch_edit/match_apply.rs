@@ -9,7 +9,11 @@ use super::text::{
     convert_newlines, detect_newline_style, norm_line_exact, norm_line_loose, split_lines_keepends,
 };
 
-pub fn apply_patches(patch_text: &str, project_root: &Path, dry_run: bool) -> Vec<PatchApplyResult> {
+pub fn apply_patches(
+    patch_text: &str,
+    project_root: &Path,
+    dry_run: bool,
+) -> Vec<PatchApplyResult> {
     match parse_patches(patch_text, project_root) {
         Ok(patches) => apply_parsed_patches(&patches, dry_run),
         Err(errors) => errors
@@ -32,11 +36,15 @@ pub fn apply_patches(patch_text: &str, project_root: &Path, dry_run: bool) -> Ve
 
 pub fn apply_parsed_patches(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchApplyResult> {
     let mut indexed_results: Vec<(usize, PatchApplyResult)> = Vec::new();
-    let mut file_search_patches: BTreeMap<std::path::PathBuf, Vec<(usize, PatchBlock)>> = BTreeMap::new();
+    let mut file_search_patches: BTreeMap<std::path::PathBuf, Vec<(usize, PatchBlock)>> =
+        BTreeMap::new();
 
     for (idx, patch) in patches.iter().cloned().enumerate() {
         if patch.operation == PatchOperation::Search {
-            file_search_patches.entry(patch.file_path.clone()).or_default().push((idx, patch));
+            file_search_patches
+                .entry(patch.file_path.clone())
+                .or_default()
+                .push((idx, patch));
         } else {
             indexed_results.push((idx, apply_patch(&patch, dry_run)));
         }
@@ -47,7 +55,10 @@ pub fn apply_parsed_patches(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchA
             let (idx, patch) = &indexed_searches[0];
             indexed_results.push((*idx, apply_patch(patch, dry_run)));
         } else {
-            let patches = indexed_searches.iter().map(|(_, p)| p.clone()).collect::<Vec<_>>();
+            let patches = indexed_searches
+                .iter()
+                .map(|(_, p)| p.clone())
+                .collect::<Vec<_>>();
             let results = apply_search_patches_batch(&patches, dry_run);
             for ((idx, _), result) in indexed_searches.into_iter().zip(results) {
                 indexed_results.push((idx, result));
@@ -56,7 +67,10 @@ pub fn apply_parsed_patches(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchA
     }
 
     indexed_results.sort_by_key(|(idx, _)| *idx);
-    indexed_results.into_iter().map(|(_, result)| result).collect()
+    indexed_results
+        .into_iter()
+        .map(|(_, result)| result)
+        .collect()
 }
 
 fn apply_patch(patch: &PatchBlock, dry_run: bool) -> PatchApplyResult {
@@ -119,7 +133,14 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             atomic_write_text(&patch.file_path, &replace_text, TextEncoding::Utf8)?;
         }
 
-        return Ok(base_result(patch, true, "applied", None, 0, replace_lines.len()));
+        return Ok(base_result(
+            patch,
+            true,
+            "applied",
+            None,
+            0,
+            replace_lines.len(),
+        ));
     }
 
     if !patch.file_path.exists() {
@@ -165,7 +186,14 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             atomic_write_text(&patch.file_path, &replace_text, encoding)?;
         }
 
-        return Ok(base_result(patch, true, "applied", None, 0, replace_lines.len()));
+        return Ok(base_result(
+            patch,
+            true,
+            "applied",
+            None,
+            0,
+            replace_lines.len(),
+        ));
     }
 
     let file_lines = split_lines_keepends(&content);
@@ -260,12 +288,18 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
         for matched in &mut matches {
             if matched.status == "matched" {
                 matched.status = "overlap_conflict".into();
-                matched.error = Some("Overlapping match with another patch in the same batch".into());
+                matched.error =
+                    Some("Overlapping match with another patch in the same batch".into());
             }
         }
     }
 
-    if matches.iter().any(|m| !matches!(m.status.as_str(), "matched" | "already_applied" | "no_change_patch")) {
+    if matches.iter().any(|m| {
+        !matches!(
+            m.status.as_str(),
+            "matched" | "already_applied" | "no_change_patch"
+        )
+    }) {
         return matches
             .iter()
             .map(|m| {
@@ -278,8 +312,16 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                         m.search_line_count,
                         m.replace_line_count,
                     );
-                    result.match_mode = if m.match_mode.is_empty() { None } else { Some(m.match_mode.clone()) };
-                    result.match_line = if m.match_line == 0 { None } else { Some(m.match_line) };
+                    result.match_mode = if m.match_mode.is_empty() {
+                        None
+                    } else {
+                        Some(m.match_mode.clone())
+                    };
+                    result.match_line = if m.match_line == 0 {
+                        None
+                    } else {
+                        Some(m.match_line)
+                    };
                     result
                 } else {
                     match_to_result(m)
@@ -297,7 +339,8 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
     matched.sort_by_key(|m| std::cmp::Reverse(m.abs_start));
 
     for m in &matched {
-        let replace_lines = split_lines_keepends(&convert_newlines(&m.patch.replace_content, newline));
+        let replace_lines =
+            split_lines_keepends(&convert_newlines(&m.patch.replace_content, newline));
         new_lines.splice(m.abs_start..m.abs_end, replace_lines);
     }
 
@@ -322,7 +365,11 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
     matches
         .iter()
         .map(|m| {
-            let status = if m.status == "matched" { "applied" } else { "already_applied" };
+            let status = if m.status == "matched" {
+                "applied"
+            } else {
+                "already_applied"
+            };
             let mut result = base_result(
                 &m.patch,
                 true,
@@ -331,20 +378,37 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                 m.search_line_count,
                 m.replace_line_count,
             );
-            result.match_mode = if m.match_mode.is_empty() { None } else { Some(m.match_mode.clone()) };
-            result.match_line = if m.match_line == 0 { None } else { Some(m.match_line) };
+            result.match_mode = if m.match_mode.is_empty() {
+                None
+            } else {
+                Some(m.match_mode.clone())
+            };
+            result.match_line = if m.match_line == 0 {
+                None
+            } else {
+                Some(m.match_line)
+            };
             result
         })
         .collect()
 }
 
-fn match_patch(patch: &PatchBlock, file_lines: &[String], newline: &str, content: &str) -> PatchMatch {
+fn match_patch(
+    patch: &PatchBlock,
+    file_lines: &[String],
+    newline: &str,
+    content: &str,
+) -> PatchMatch {
     let search_text = convert_newlines(&patch.search_content, newline);
     let search_lines = split_lines_keepends(&search_text);
     let replace_text = convert_newlines(&patch.replace_content, newline);
     let replace_lines = split_lines_keepends(&replace_text);
 
-    let fail = |status: &str, error: Option<String>, related_lines: Option<Vec<usize>>, match_mode: String, match_line: usize| PatchMatch {
+    let fail = |status: &str,
+                error: Option<String>,
+                related_lines: Option<Vec<usize>>,
+                match_mode: String,
+                match_line: usize| PatchMatch {
         patch: patch.clone(),
         abs_start: 0,
         abs_end: 0,
@@ -447,7 +511,11 @@ fn match_patch(patch: &PatchBlock, file_lines: &[String], newline: &str, content
     if search_matches.len() > 1 {
         let related = search_matches.iter().map(|m| prefix_len + *m + 1).collect();
         return fail(
-            if replace_matches.is_empty() { "search_ambiguous" } else { "search_replace_coexist" },
+            if replace_matches.is_empty() {
+                "search_ambiguous"
+            } else {
+                "search_replace_coexist"
+            },
             Some(if replace_matches.is_empty() {
                 "SEARCH matched multiple locations; narrow the line range".into()
             } else {
@@ -470,7 +538,10 @@ fn match_patch(patch: &PatchBlock, file_lines: &[String], newline: &str, content
     }
 
     if replace_matches.len() > 1 {
-        let related = replace_matches.iter().map(|m| prefix_len + *m + 1).collect();
+        let related = replace_matches
+            .iter()
+            .map(|m| prefix_len + *m + 1)
+            .collect();
         return fail(
             "replace_ambiguous",
             Some("SEARCH not found, and REPLACE matched multiple locations".into()),
@@ -480,14 +551,26 @@ fn match_patch(patch: &PatchBlock, file_lines: &[String], newline: &str, content
         );
     }
 
-    fail("search_not_found", Some("SEARCH content not found in scope".into()), None, String::new(), 0)
+    fail(
+        "search_not_found",
+        Some("SEARCH content not found in scope".into()),
+        None,
+        String::new(),
+        0,
+    )
 }
 
-fn normalize_line_range(range: (Option<usize>, Option<usize>), total_lines: usize) -> Result<(usize, usize), String> {
+fn normalize_line_range(
+    range: (Option<usize>, Option<usize>),
+    total_lines: usize,
+) -> Result<(usize, usize), String> {
     let start = range.0.unwrap_or(1);
     let end = range.1.unwrap_or(total_lines);
     if start == 0 || end == 0 || end < start {
-        return Err(format!("Invalid line range: {}", format_line_range(Some(range))));
+        return Err(format!(
+            "Invalid line range: {}",
+            format_line_range(Some(range))
+        ));
     }
     Ok((start, end))
 }
@@ -521,7 +604,13 @@ fn find_block_matches(region: &[String], needle: &[String], loose: bool) -> Vec<
         return vec![];
     }
 
-    let norm = |s: &String| if loose { norm_line_loose(s) } else { norm_line_exact(s) };
+    let norm = |s: &String| {
+        if loose {
+            norm_line_loose(s)
+        } else {
+            norm_line_exact(s)
+        }
+    };
     let target = needle.iter().map(norm).collect::<Vec<_>>();
     let mut matches = Vec::new();
 
@@ -542,7 +631,10 @@ fn find_block_matches(region: &[String], needle: &[String], loose: bool) -> Vec<
 }
 
 fn check_overlap(matches: &[PatchMatch]) -> bool {
-    let matched = matches.iter().filter(|m| m.status == "matched").collect::<Vec<_>>();
+    let matched = matches
+        .iter()
+        .filter(|m| m.status == "matched")
+        .collect::<Vec<_>>();
     for i in 0..matched.len() {
         for j in (i + 1)..matched.len() {
             let a = matched[i];
@@ -556,7 +648,10 @@ fn check_overlap(matches: &[PatchMatch]) -> bool {
 }
 
 fn match_to_result(m: &PatchMatch) -> PatchApplyResult {
-    let success = matches!(m.status.as_str(), "matched" | "already_applied" | "no_change_patch");
+    let success = matches!(
+        m.status.as_str(),
+        "matched" | "already_applied" | "no_change_patch"
+    );
     let mut result = base_result(
         &m.patch,
         success,
@@ -565,8 +660,16 @@ fn match_to_result(m: &PatchMatch) -> PatchApplyResult {
         m.search_line_count,
         m.replace_line_count,
     );
-    result.match_mode = if m.match_mode.is_empty() { None } else { Some(m.match_mode.clone()) };
-    result.match_line = if m.match_line == 0 { None } else { Some(m.match_line) };
+    result.match_mode = if m.match_mode.is_empty() {
+        None
+    } else {
+        Some(m.match_mode.clone())
+    };
+    result.match_line = if m.match_line == 0 {
+        None
+    } else {
+        Some(m.match_line)
+    };
     result.related_lines = m.related_lines.clone();
     result
 }
