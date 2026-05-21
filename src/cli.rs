@@ -84,6 +84,7 @@ pub enum CliCommand {
 pub struct ListArgs {}
 
 #[derive(Args, Debug)]
+#[command(disable_help_subcommand = true)]
 pub struct MapArgs {
     #[command(subcommand)]
     pub command: Option<MapCommand>,

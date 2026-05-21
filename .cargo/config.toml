@@ -1,0 +1,2 @@
+[alias]
+s = "run --bin squire --"
