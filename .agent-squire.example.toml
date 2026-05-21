@@ -1,0 +1,11 @@
+[commands.fetch]
+run = ["python3", "~/skills/fetch_web.py"]
+summary = "Fetch readable webpage content."
+print_aware = true
+expand_args = false
+
+[commands.html2md]
+run = ["node", "~/scripts/html2md.mjs"]
+summary = "Convert HTML to Markdown."
+print_aware = true
+expand_args = false
