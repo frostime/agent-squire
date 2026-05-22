@@ -85,28 +85,7 @@ pub fn run(args: InfoArgs, ctx: &CommandContext) -> Result<u8> {
             output::print_json(&payload)?;
         }
         _ => {
-            println!("File Info ({} file(s))", infos.len());
-            println!(
-                "{:<42} {:<7} {:>10} {:<12} {:<10} {:<8} {:>8}",
-                "Path", "Kind", "Size", "Encoding", "BOM", "Newline", "Lines"
-            );
-            for info in &infos {
-                println!(
-                    "{:<42} {:<7} {:>10} {:<12} {:<10} {:<8} {:>8}",
-                    truncate(&info.path, 42),
-                    info.kind,
-                    info.size_bytes,
-                    info.encoding,
-                    info.bom,
-                    info.newline,
-                    info.line_count
-                        .map(|n| n.to_string())
-                        .unwrap_or_else(|| "-".into())
-                );
-            }
-            if !missing.is_empty() {
-                println!("Missing sources: {}", missing.join(", "));
-            }
+            print_compact_info(&infos, &missing, &ctx.cwd);
         }
     }
 
@@ -397,11 +376,62 @@ fn expand_home(source: &str) -> String {
     source.to_string()
 }
 
-fn truncate(s: &str, width: usize) -> String {
-    if s.chars().count() <= width {
-        return s.to_string();
+fn print_compact_info(infos: &[FileInfo], missing: &[String], cwd: &Path) {
+    let cwd_str = cwd.to_string_lossy();
+    for info in infos {
+        let display_path = make_relative(&info.path, &cwd_str);
+        let size = format_size(info.size_bytes);
+        if info.kind == "binary" {
+            println!("{display_path} | {size} | binary");
+        } else {
+            let mut parts = vec![display_path, size, info.encoding.clone()];
+            if info.bom != "none" {
+                parts.push(format!("bom:{}", info.bom));
+            }
+            parts.push(info.newline.clone());
+            if let Some(n) = info.line_count {
+                parts.push(format!("{n}L"));
+            }
+            println!("{}", parts.join(" | "));
+        }
     }
-    let mut out = s.chars().take(width.saturating_sub(1)).collect::<String>();
-    out.push('…');
-    out
+    if !missing.is_empty() {
+        println!("missing: {}", missing.join(", "));
+    }
+}
+
+fn make_relative<'a>(path: &'a str, cwd: &str) -> String {
+    // Strip Windows extended-length prefix
+    let clean = path.strip_prefix(r"//?/").unwrap_or(path);
+    let clean = clean.strip_prefix(r"\\?\")
+        .unwrap_or(clean);
+    // Try to make relative to cwd
+    let cwd_clean = cwd.strip_prefix(r"//?/").unwrap_or(cwd);
+    let cwd_clean = cwd_clean.strip_prefix(r"\\?\")
+        .unwrap_or(cwd_clean);
+    // Normalize separators for comparison
+    let norm_path = clean.replace('\\', "/");
+    let norm_cwd = cwd_clean.replace('\\', "/");
+    let prefix = if norm_cwd.ends_with('/') {
+        norm_cwd.clone()
+    } else {
+        format!("{norm_cwd}/")
+    };
+    if let Some(rel) = norm_path.strip_prefix(&prefix) {
+        rel.to_string()
+    } else {
+        norm_path
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes}B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1}KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.1}GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
 }

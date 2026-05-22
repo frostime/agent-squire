@@ -1,11 +1,12 @@
 [package]
 name = "agent-squire"
-version = "0.1.0"
-edition = "2021"
+authors = ["frostime"]
+version = "0.2.0"
+edition = "2024"
 description = "A local CLI toolbox for humans and agents."
 license = "MIT"
 readme = "README.md"
-repository = "https://example.invalid/agent-squire"
+repository = "https://codeberg.org/frostime/agent-squire"
 keywords = ["cli", "agent", "toolbox", "patch"]
 categories = ["command-line-utilities", "development-tools"]
 
@@ -17,9 +18,9 @@ path = "src/lib.rs"
 name = "squire"
 path = "src/bin/squire.rs"
 
-[[bin]]
-name = "agent-squire"
-path = "src/bin/agent-squire.rs"
+# [[bin]]
+# name = "agent-squire"
+# path = "src/bin/agent-squire.rs"
 
 [[bin]]
 name = "asq"

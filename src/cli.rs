@@ -20,6 +20,7 @@ pub struct CommandContext {
     name = "squire",
     bin_name = "squire",
     version,
+    disable_help_subcommand = true,
     about = "A local CLI toolbox for humans and agents.",
     long_about = "Agent Squire packages useful local tools and external command mappings behind a predictable CLI interface for humans and agents."
 )]
@@ -51,16 +52,17 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum CliCommand {
-    #[command(alias = "view-tree", about = "Show a project directory tree")]
+    #[command(name = "file-tree", alias = "view-tree", about = "Show a project directory tree")]
     Tree(builtins::tree::TreeArgs),
 
     #[command(
+        name = "file-info",
         alias = "fileinfo",
         about = "Inspect file metadata and text/binary format"
     )]
     Info(builtins::info::InfoArgs),
 
-    #[command(alias = "mdtoc", about = "Show Markdown headings with line numbers")]
+    #[command(name = "md-toc", alias = "mdtoc", about = "Show Markdown headings with line numbers")]
     Toc(builtins::toc::TocArgs),
 
     #[command(
@@ -73,8 +75,8 @@ pub enum CliCommand {
     #[command(about = "List built-in and mapped commands")]
     List(ListArgs),
 
-    #[command(about = "Inspect external command mappings")]
-    Map(MapArgs),
+    // #[command(about = "Inspect external command mappings")]
+    // Map(MapArgs),
 
     #[command(external_subcommand)]
     External(Vec<OsString>),
@@ -133,7 +135,8 @@ fn try_main() -> Result<u8> {
         CliCommand::Toc(args) => builtins::toc::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
         CliCommand::List(_) => run_list(&ctx),
-        CliCommand::Map(args) => run_map(args, &ctx),
+        // TODO
+        // CliCommand::Map(args) => run_map(args, &ctx),
         CliCommand::External(raw) => {
             if raw.is_empty() {
                 bail!("missing external command name");
@@ -158,9 +161,9 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
             "command": "list",
             "data": {
                 "builtins": [
-                    {"name": "tree", "aliases": ["view-tree"], "summary": "Show a project directory tree"},
-                    {"name": "info", "aliases": ["fileinfo"], "summary": "Inspect file metadata and text/binary format"},
-                    {"name": "toc", "aliases": ["mdtoc"], "summary": "Show Markdown headings with line numbers"},
+                    {"name": "file-tree", "aliases": ["view-tree"], "summary": "Show a project directory tree"},
+                    {"name": "file-info", "aliases": ["fileinfo"], "summary": "Inspect file metadata and text/binary format"},
+                    {"name": "md-toc", "aliases": ["mdtoc"], "summary": "Show Markdown headings with line numbers"},
                     {"name": "patch-edit", "aliases": ["patch"], "summary": "Apply SEARCH/REPLACE patch blocks"},
                     {"name": "list", "aliases": [], "summary": "List built-in and mapped commands"},
                     {"name": "map", "aliases": [], "summary": "Inspect external command mappings"}
@@ -175,9 +178,9 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
     }
 
     println!("Built-in commands:");
-    println!("  tree          Show a project directory tree. Alias: view-tree");
-    println!("  info          Inspect file metadata and text/binary format. Alias: fileinfo");
-    println!("  toc           Show Markdown heading outline. Alias: mdtoc");
+    println!("  file-tree     Show a project directory tree. Alias: view-tree");
+    println!("  file-info     Inspect file metadata and text/binary format. Alias: fileinfo");
+    println!("  md-toc        Show Markdown heading outline. Alias: mdtoc");
     println!("  patch-edit    Apply SEARCH/REPLACE patch blocks. Alias: patch");
     println!("  list          List built-in and mapped commands");
     println!("  map           Inspect external command mappings");
@@ -195,7 +198,8 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
     Ok(0)
 }
 
-fn run_map(args: MapArgs, _ctx: &CommandContext) -> Result<u8> {
+/// TODO 后面再说，现在先不要
+fn _run_map(args: MapArgs, _ctx: &CommandContext) -> Result<u8> {
     match args.command.unwrap_or(MapCommand::List) {
         MapCommand::List => {
             let config = external::load_config();
