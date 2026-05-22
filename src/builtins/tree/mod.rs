@@ -1,43 +1,23 @@
-use std::fs;
+use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Args;
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use ignore::WalkBuilder;
 use serde::Serialize;
 
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
-const ALWAYS_SKIP: &[&str] = &[
-    ".git",
-    "__pycache__",
-    "node_modules",
-    ".pytest_cache",
-    ".mypy_cache",
-];
-const FALLBACK_SKIP: &[&str] = &[
-    ".git",
-    "__pycache__",
-    "node_modules",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-    ".venv",
-    "venv",
-    ".env",
-    "dist",
-    ".tox",
-    ".eggs",
-];
-
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Display a directory tree. Respects .gitignore when possible and always hides common noise such as .git and node_modules unless --no-gitignore is used."
+    long_about = "Display directory trees. Respects nested .gitignore files \
+and always hides common noise such as .git and node_modules unless --no-gitignore is used."
 )]
 pub struct TreeArgs {
-    #[arg(default_value = ".", help = "Directory to display")]
-    pub path: PathBuf,
+    #[arg(default_value = ".", help = "Directories to display")]
+    pub paths: Vec<PathBuf>,
 
     #[arg(short = 'd', long = "depth", value_name = "N", help = "Maximum depth")]
     pub depth: Option<usize>,
@@ -63,15 +43,6 @@ pub struct TreeArgs {
     pub output: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone)]
-struct TreeOptions {
-    depth: Option<usize>,
-    no_gitignore: bool,
-    dirs_only: bool,
-    show_size: bool,
-    detail: bool,
-}
-
 #[derive(Debug, Serialize)]
 struct TreeData {
     root: String,
@@ -86,247 +57,306 @@ struct Stats {
     total_size: u64,
 }
 
-pub fn run(args: TreeArgs, ctx: &CommandContext) -> Result<u8> {
-    let path = args.path;
-    if !path.exists() {
-        anyhow::bail!("path does not exist: {}", path.display());
-    }
-    if !path.is_dir() {
-        anyhow::bail!("path is not a directory: {}", path.display());
-    }
+const ALWAYS_SKIP: &[&str] = &[
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".pytest_cache",
+    ".mypy_cache",
+];
 
-    let opts = TreeOptions {
-        depth: args.depth,
-        no_gitignore: args.no_gitignore,
-        dirs_only: args.dirs_only,
-        show_size: args.show_size,
-        detail: args.detail,
+pub fn run(args: TreeArgs, ctx: &CommandContext) -> Result<u8> {
+    let paths = if args.paths.is_empty() {
+        vec![PathBuf::from(".")]
+    } else {
+        args.paths.clone()
     };
 
-    let filter = IgnoreFilter::new(&path, opts.no_gitignore);
-    let stats = collect_stats(&path, &opts, &filter)?;
-    let mut lines = Vec::new();
-    lines.push(format!(
-        "{}/",
-        path.file_name().and_then(|s| s.to_str()).unwrap_or(".")
-    ));
-    render_children(&path, &opts, &filter, 0, "", &mut lines)?;
+    for path in &paths {
+        if !path.exists() {
+            anyhow::bail!("path does not exist: {}", path.display());
+        }
+        if !path.is_dir() {
+            anyhow::bail!("path is not a directory: {}", path.display());
+        }
+    }
+
+    let mut all_outputs: Vec<(String, Vec<String>, Stats)> = Vec::new();
+
+    for path in &paths {
+        let tree = build_tree(path, &args)?;
+        let stats = compute_stats(&tree);
+        let mut lines = Vec::new();
+        let root_name = path.file_name().and_then(|s| s.to_str()).unwrap_or(".");
+        lines.push(format!("{root_name}/"));
+        render_tree_node(&tree, &args, "", &mut lines);
+        all_outputs.push((path.display().to_string(), lines, stats));
+    }
 
     match ctx.print {
-        PrintMode::Json => {
-            let data = TreeData {
-                root: path.display().to_string(),
-                lines,
-                stats,
-            };
-            let payload = Envelope {
-                ok: true,
-                command: "tree",
-                data,
-                warnings: vec![],
-                meta: serde_json::json!({}),
-            };
-            output::print_json(&payload)?;
-        }
-        _ => {
-            let mut text = lines.join("\n");
-            text.push_str("\n\n");
-            text.push_str(&format!(
-                "Files: {} | Directories: {} | Total size: {}\n",
-                stats.files,
-                stats.directories,
-                format_size(stats.total_size as f64)
-            ));
-            if let Some(path) = args.output {
-                fs::write(&path, text)
-                    .with_context(|| format!("failed to write {}", path.display()))?;
-                println!("[OK] Saved to: {}", path.display());
-            } else {
-                print!("{text}");
-            }
-        }
+        PrintMode::Json => print_json_output(&all_outputs)?,
+        _ => print_compact_output(&all_outputs, args.output.as_deref())?,
     }
 
     Ok(0)
 }
 
-struct IgnoreFilter {
-    no_gitignore: bool,
-    gitignore: Option<Gitignore>,
+/// A node in the directory tree. Children are sorted: dirs first, then alphabetical.
+#[derive(Debug)]
+struct TreeNode {
+    name: String,
+    full_path: PathBuf,
+    is_dir: bool,
+    size: u64,
+    children: Vec<TreeNode>,
 }
 
-impl IgnoreFilter {
-    fn new(start: &Path, no_gitignore: bool) -> Self {
-        if no_gitignore {
-            return Self {
-                no_gitignore,
-                gitignore: None,
-            };
-        }
+/// Build a tree structure using `ignore::WalkBuilder` which handles nested .gitignore.
+fn build_tree(root: &Path, args: &TreeArgs) -> Result<TreeNode> {
+    let mut walker = WalkBuilder::new(root);
+    walker
+        .hidden(false)
+        .git_ignore(!args.no_gitignore)
+        .git_global(!args.no_gitignore)
+        .git_exclude(!args.no_gitignore)
+        .sort_by_file_name(|a, b| sort_entry_name(a, b));
 
-        let root = find_project_root(start).unwrap_or_else(|| start.to_path_buf());
-        let mut builder = GitignoreBuilder::new(&root);
-        let ignore_path = root.join(".gitignore");
-        if ignore_path.exists() {
-            let _ = builder.add(ignore_path);
-        }
-
-        let gitignore = builder.build().ok();
-        Self {
-            no_gitignore,
-            gitignore,
-        }
+    if let Some(max_depth) = args.depth {
+        // +1 because WalkBuilder depth includes the root itself
+        walker.max_depth(Some(max_depth + 1));
     }
 
-    fn should_skip(&self, path: &Path) -> bool {
-        if self.no_gitignore {
-            return false;
-        }
-
-        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if ALWAYS_SKIP.contains(&name) {
+    // Custom filter for ALWAYS_SKIP entries when gitignore is active
+    let use_skip = !args.no_gitignore;
+    walker.filter_entry(move |entry| {
+        if !use_skip {
             return true;
         }
-
-        if let Some(gi) = &self.gitignore {
-            if gi
-                .matched_path_or_any_parents(path, path.is_dir())
-                .is_ignore()
-            {
-                return true;
-            }
-        } else if path.is_dir() && FALLBACK_SKIP.contains(&name) {
-            return true;
-        }
-
-        false
-    }
-}
-
-fn find_project_root(start: &Path) -> Option<PathBuf> {
-    let mut current = start.canonicalize().ok()?;
-    for _ in 0..100 {
-        if current.join(".gitignore").exists() || current.join(".git").is_dir() {
-            return Some(current);
-        }
-        let parent = current.parent()?.to_path_buf();
-        if parent == current {
-            break;
-        }
-        current = parent;
-    }
-    None
-}
-
-fn sorted_children(path: &Path, filter: &IgnoreFilter) -> Result<Vec<PathBuf>> {
-    let mut entries = fs::read_dir(path)
-        .with_context(|| format!("failed to read {}", path.display()))?
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| !filter.should_skip(path))
-        .collect::<Vec<_>>();
-
-    entries.sort_by_key(|p| {
-        (
-            !p.is_dir(),
-            p.file_name()
-                .map(|s| s.to_string_lossy().to_lowercase())
-                .unwrap_or_default(),
-        )
+        let name = entry.file_name().to_str().unwrap_or("");
+        !ALWAYS_SKIP.contains(&name)
     });
 
-    Ok(entries)
-}
+    // Collect all entries into a parent→children map
+    let mut children_map: BTreeMap<PathBuf, Vec<(PathBuf, bool, u64)>> = BTreeMap::new();
+    let canon_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
 
-fn render_children(
-    root: &Path,
-    opts: &TreeOptions,
-    filter: &IgnoreFilter,
-    depth: usize,
-    prefix: &str,
-    out: &mut Vec<String>,
-) -> Result<()> {
-    if opts.depth.is_some_and(|max| depth >= max) {
-        return Ok(());
+    for entry in walker.build() {
+        let entry = entry.with_context(|| "failed to walk directory")?;
+        let path = entry.path().to_path_buf();
+        let canon = path.canonicalize().unwrap_or_else(|_| path.clone());
+
+        if canon == canon_root {
+            continue; // skip root itself
+        }
+
+        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        let size = if is_dir {
+            0
+        } else {
+            entry.metadata().map(|m| m.len()).unwrap_or(0)
+        };
+
+        let parent = path.parent().unwrap_or(root).to_path_buf();
+        children_map
+            .entry(parent)
+            .or_default()
+            .push((path, is_dir, size));
     }
 
-    let entries = sorted_children(root, filter)?;
-    let visible = entries
-        .into_iter()
-        .filter(|p| !opts.dirs_only || p.is_dir())
-        .collect::<Vec<_>>();
-
-    for (idx, path) in visible.iter().enumerate() {
-        let is_last = idx + 1 == visible.len();
-        let connector = if is_last { "└── " } else { "├── " };
-        let mut label = path
+    // Recursively build tree from the map
+    fn build_node(
+        path: &Path,
+        is_dir: bool,
+        size: u64,
+        children_map: &BTreeMap<PathBuf, Vec<(PathBuf, bool, u64)>>,
+    ) -> TreeNode {
+        let name = path
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("")
+            .unwrap_or(".")
             .to_string();
 
-        if path.is_dir() {
-            label.push('/');
-        } else if opts.detail {
-            let (lines, chars) = count_text_stats(path);
-            if lines > 0 {
-                label.push_str(&format!(" ({lines} lines, {chars} chars)"));
-            } else if let Ok(meta) = fs::metadata(path) {
-                label.push_str(&format!(" ({})", format_size(meta.len() as f64)));
-            }
-        } else if opts.show_size {
-            if let Ok(meta) = fs::metadata(path) {
-                label.push_str(&format!(" ({})", format_size(meta.len() as f64)));
-            }
-        }
+        let children = if is_dir {
+            children_map
+                .get(path)
+                .map(|entries| {
+                    let mut nodes: Vec<TreeNode> = entries
+                        .iter()
+                        .map(|(p, d, s)| build_node(p, *d, *s, children_map))
+                        .collect();
+                    // Sort: dirs first, then alphabetical (case-insensitive)
+                    nodes.sort_by(|a, b| {
+                        a.is_dir
+                            .cmp(&b.is_dir)
+                            .reverse()
+                            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                    });
+                    nodes
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
-        out.push(format!("{prefix}{connector}{label}"));
-
-        if path.is_dir() {
-            let child_prefix = format!("{prefix}{}", if is_last { "    " } else { "│   " });
-            render_children(path, opts, filter, depth + 1, &child_prefix, out)?;
-        }
+        TreeNode { name, full_path: path.to_path_buf(), is_dir, size, children }
     }
 
-    Ok(())
+    // Build a virtual root node
+    let root_children = children_map
+        .get(root)
+        .map(|entries| {
+            let mut nodes: Vec<TreeNode> = entries
+                .iter()
+                .map(|(p, d, s)| build_node(p, *d, *s, &children_map))
+                .collect();
+            nodes.sort_by(|a, b| {
+                a.is_dir
+                    .cmp(&b.is_dir)
+                    .reverse()
+                    .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            });
+            nodes
+        })
+        .unwrap_or_default();
+
+    Ok(TreeNode {
+        name: root
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(".")
+            .to_string(),
+        full_path: root.to_path_buf(),
+        is_dir: true,
+        size: 0,
+        children: root_children,
+    })
 }
 
-fn collect_stats(root: &Path, opts: &TreeOptions, filter: &IgnoreFilter) -> Result<Stats> {
+fn sort_entry_name(a: &OsStr, b: &OsStr) -> std::cmp::Ordering {
+    let a_s = a.to_string_lossy().to_lowercase();
+    let b_s = b.to_string_lossy().to_lowercase();
+    a_s.cmp(&b_s)
+}
+
+fn compute_stats(node: &TreeNode) -> Stats {
     let mut stats = Stats {
         files: 0,
         directories: 0,
         total_size: 0,
     };
-    collect_stats_inner(root, opts, filter, &mut stats)?;
-    Ok(stats)
+    count_stats(node, &mut stats);
+    stats
 }
 
-fn collect_stats_inner(
-    root: &Path,
-    opts: &TreeOptions,
-    filter: &IgnoreFilter,
-    stats: &mut Stats,
-) -> Result<()> {
-    for path in sorted_children(root, filter)? {
-        if path.is_dir() {
+fn count_stats(node: &TreeNode, stats: &mut Stats) {
+    for child in &node.children {
+        if child.is_dir {
             stats.directories += 1;
-            collect_stats_inner(&path, opts, filter, stats)?;
-        } else if !opts.dirs_only {
+            count_stats(child, stats);
+        } else {
             stats.files += 1;
-            if let Ok(meta) = fs::metadata(&path) {
-                stats.total_size += meta.len();
-            }
+            stats.total_size += child.size;
         }
+    }
+}
+
+fn render_tree_node(node: &TreeNode, args: &TreeArgs, prefix: &str, out: &mut Vec<String>) {
+    let children: Vec<&TreeNode> = if args.dirs_only {
+        node.children.iter().filter(|c| c.is_dir).collect()
+    } else {
+        node.children.iter().collect()
+    };
+
+    for (idx, child) in children.iter().enumerate() {
+        let is_last = idx + 1 == children.len();
+        let connector = if is_last { "\u{2514}\u{2500}\u{2500} " } else { "\u{251c}\u{2500}\u{2500} " };
+        let mut label = child.name.clone();
+
+        if child.is_dir {
+            label.push('/');
+        } else if args.detail {
+            let (lines, chars) = count_text_stats(&child.full_path);
+            if lines > 0 {
+                label.push_str(&format!(" ({lines} lines, {chars} chars)"));
+            } else {
+                label.push_str(&format!(" ({})", format_size(child.size as f64)));
+            }
+        } else if args.show_size {
+            label.push_str(&format!(" ({})", format_size(child.size as f64)));
+        }
+
+        out.push(format!("{prefix}{connector}{label}"));
+
+        if child.is_dir {
+            let child_prefix = format!(
+                "{prefix}{}",
+                if is_last { "    " } else { "\u{2502}   " }
+            );
+            render_tree_node(child, args, &child_prefix, out);
+        }
+    }
+}
+
+fn print_json_output(outputs: &[(String, Vec<String>, Stats)]) -> Result<()> {
+    if outputs.len() == 1 {
+        let (root, lines, stats) = &outputs[0];
+        let data = TreeData {
+            root: root.clone(),
+            lines: lines.clone(),
+            stats: stats.clone(),
+        };
+        let payload = Envelope {
+            ok: true,
+            command: "tree",
+            data,
+            warnings: vec![],
+            meta: serde_json::json!({}),
+        };
+        output::print_json(&payload)?;
+    } else {
+        let trees: Vec<TreeData> = outputs
+            .iter()
+            .map(|(root, lines, stats)| TreeData {
+                root: root.clone(),
+                lines: lines.clone(),
+                stats: stats.clone(),
+            })
+            .collect();
+        let payload = Envelope {
+            ok: true,
+            command: "tree",
+            data: trees,
+            warnings: vec![],
+            meta: serde_json::json!({}),
+        };
+        output::print_json(&payload)?;
     }
     Ok(())
 }
 
-fn count_text_stats(path: &Path) -> (usize, usize) {
-    let Ok(content) = fs::read_to_string(path) else {
-        return (0, 0);
-    };
-    let lines = content.matches('\n').count()
-        + usize::from(!content.is_empty() && !content.ends_with('\n'));
-    (lines, content.chars().count())
+fn print_compact_output(outputs: &[(String, Vec<String>, Stats)], out_file: Option<&Path>) -> Result<()> {
+    let mut text = String::new();
+    for (idx, (_root, lines, stats)) in outputs.iter().enumerate() {
+        if idx > 0 {
+            text.push_str("\n");
+        }
+        text.push_str(&lines.join("\n"));
+        text.push_str(&format!(
+            "\n\nFiles: {} | Directories: {} | Total size: {}\n",
+            stats.files,
+            stats.directories,
+            format_size(stats.total_size as f64)
+        ));
+    }
+
+    if let Some(path) = out_file {
+        std::fs::write(path, &text)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+        println!("[OK] Saved to: {}", path.display());
+    } else {
+        print!("{text}");
+    }
+    Ok(())
 }
 
 fn format_size(mut size: f64) -> String {
@@ -337,4 +367,13 @@ fn format_size(mut size: f64) -> String {
         size /= 1024.0;
     }
     format!("{size:.1}TB")
+}
+
+fn count_text_stats(path: &Path) -> (usize, usize) {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return (0, 0);
+    };
+    let lines = content.matches('\n').count()
+        + usize::from(!content.is_empty() && !content.ends_with('\n'));
+    (lines, content.chars().count())
 }

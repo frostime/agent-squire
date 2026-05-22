@@ -13,8 +13,8 @@ use crate::runtime::output::{self, Envelope, PrintMode};
     long_about = "Pre-scan Markdown files before reading. Outputs file size metadata and heading structure with 1-based line numbers."
 )]
 pub struct TocArgs {
-    #[arg(default_value = ".", help = "File, directory, or glob pattern")]
-    pub source: String,
+    #[arg(default_value = ".", help = "Files, directories, or glob patterns")]
+    pub sources: Vec<String>,
 
     #[arg(
         long,
@@ -52,26 +52,36 @@ struct TocData {
 
 pub fn run(args: TocArgs, ctx: &CommandContext) -> Result<u8> {
     let depth = args.depth.clamp(1, 6);
-    let files = resolve_sources(&args.source)?;
+    let sources = if args.sources.is_empty() {
+        vec![".".to_string()]
+    } else {
+        args.sources
+    };
+    let (files, missing) = resolve_sources(&sources)?;
 
     if files.is_empty() {
-        println!("No Markdown files found for: {}", args.source);
+        if !missing.is_empty() {
+            anyhow::bail!("No Markdown files found for: {}", missing.join(", "));
+        }
+        println!("No Markdown files found.");
         return Ok(0);
     }
 
-    let base = {
-        let p = PathBuf::from(&args.source);
-        if p.is_dir() {
-            Some(p)
-        } else {
-            None
-        }
-    };
+    // Use first directory source as display base, if any
+    let base = sources.iter().find_map(|s| {
+        let p = PathBuf::from(s);
+        if p.is_dir() { Some(p) } else { None }
+    });
 
     let results = files
         .iter()
         .map(|path| analyze_file(path, depth, base.as_deref()))
         .collect::<Vec<_>>();
+
+    let warnings: Vec<String> = missing
+        .iter()
+        .map(|s| format!("source not found: {s}"))
+        .collect();
 
     match ctx.print {
         PrintMode::Json => {
@@ -86,7 +96,7 @@ pub fn run(args: TocArgs, ctx: &CommandContext) -> Result<u8> {
                 ok: true,
                 command: "toc",
                 data,
-                warnings: vec![],
+                warnings,
                 meta: serde_json::json!({ "depth": depth }),
             };
             output::print_json(&payload)?;
@@ -118,31 +128,43 @@ pub fn run(args: TocArgs, ctx: &CommandContext) -> Result<u8> {
     Ok(0)
 }
 
-fn resolve_sources(source: &str) -> Result<Vec<PathBuf>> {
-    let p = PathBuf::from(source);
-    if p.is_dir() {
-        let mut files = walkdir::WalkDir::new(&p)
-            .sort_by_file_name()
-            .into_iter()
-            .filter_map(Result::ok)
-            .map(|entry| entry.into_path())
-            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "md"))
-            .collect::<Vec<_>>();
-        files.sort();
-        return Ok(files);
+const GLOB_CHARS: &[char] = &['*', '?', '['];
+
+fn resolve_sources(sources: &[String]) -> Result<(Vec<PathBuf>, Vec<String>)> {
+    let mut files = Vec::new();
+    let mut missing = Vec::new();
+
+    for source in sources {
+        let p = PathBuf::from(source);
+        if p.is_dir() {
+            let mut found = walkdir::WalkDir::new(&p)
+                .sort_by_file_name()
+                .into_iter()
+                .filter_map(Result::ok)
+                .map(|entry| entry.into_path())
+                .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "md"))
+                .collect::<Vec<_>>();
+            found.sort();
+            files.extend(found);
+        } else if p.is_file() {
+            files.push(p);
+        } else if source.contains(GLOB_CHARS) {
+            let matched: Vec<_> = glob(source)
+                .with_context(|| format!("invalid glob pattern: {source}"))?
+                .filter_map(Result::ok)
+                .filter(|p| p.is_file())
+                .collect();
+            if matched.is_empty() {
+                missing.push(source.clone());
+            } else {
+                files.extend(matched);
+            }
+        } else {
+            missing.push(source.clone());
+        }
     }
 
-    if p.is_file() {
-        return Ok(vec![p]);
-    }
-
-    let matched = glob(source)
-        .with_context(|| format!("invalid glob pattern: {source}"))?
-        .filter_map(Result::ok)
-        .filter(|p| p.is_file())
-        .collect::<Vec<_>>();
-
-    Ok(matched)
+    Ok((files, missing))
 }
 
 fn analyze_file(path: &Path, max_depth: usize, base: Option<&Path>) -> FileToc {
