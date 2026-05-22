@@ -72,12 +72,18 @@ pub enum CliCommand {
     )]
     PatchEdit(builtins::patch_edit::PatchEditArgs),
 
+    #[command(name = "now", about = "Print the current date and time")]
+    Now(NowArgs),
+
     #[command(about = "List built-in and mapped commands")]
     List(ListArgs),
 
     #[command(external_subcommand)]
     External(Vec<OsString>),
 }
+
+#[derive(Args, Debug)]
+pub struct NowArgs {}
 
 #[derive(Args, Debug)]
 pub struct ListArgs {}
@@ -115,6 +121,7 @@ fn try_main() -> Result<u8> {
         CliCommand::Info(args) => builtins::info::run(args, &ctx),
         CliCommand::Toc(args) => builtins::toc::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
+        CliCommand::Now(_) => builtins::now::run(&ctx),
         CliCommand::List(_) => run_list(&ctx),
         CliCommand::External(raw) => {
             if raw.is_empty() {
@@ -144,6 +151,7 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
                     {"name": "file-info", "aliases": ["fileinfo"], "summary": "Inspect file metadata and text/binary format"},
                     {"name": "md-toc", "aliases": ["mdtoc"], "summary": "Show Markdown headings with line numbers"},
                     {"name": "patch-edit", "aliases": ["patch"], "summary": "Apply SEARCH/REPLACE patch blocks"},
+                    {"name": "now", "aliases": [], "summary": "Print the current date and time"},
                     {"name": "list", "aliases": [], "summary": "List built-in and mapped commands"}
                 ],
                 "mapped": config.commands
@@ -160,6 +168,7 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
     println!("  file-info     Inspect file metadata and text/binary format. Alias: fileinfo");
     println!("  md-toc        Show Markdown heading outline. Alias: mdtoc");
     println!("  patch-edit    Apply SEARCH/REPLACE patch blocks. Alias: patch");
+    println!("  now           Print the current date and time");
     println!("  list          List built-in and mapped commands");
 
     if !config.commands.is_empty() {
@@ -174,5 +183,3 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
     }
     Ok(0)
 }
-
-
