@@ -141,21 +141,31 @@ fn try_main() -> Result<u8> {
 
 fn run_list(ctx: &CommandContext) -> Result<u8> {
     let config = external::load_config();
+    let app = Cli::command();
+
+    // Collect builtin subcommands from clap metadata
+    let builtins: Vec<_> = app
+        .get_subcommands()
+        .filter(|cmd| cmd.get_name() != "help")
+        .map(|cmd| {
+            let name = cmd.get_name().to_string();
+            let aliases: Vec<String> = cmd.get_all_aliases().map(|a| a.to_string()).collect();
+            let summary = cmd.get_about().map(|s| s.to_string()).unwrap_or_default();
+            (name, aliases, summary)
+        })
+        .collect();
+
     if ctx.print == PrintMode::Json {
+        let builtin_json: Vec<_> = builtins
+            .iter()
+            .map(|(name, aliases, summary)| {
+                serde_json::json!({ "name": name, "aliases": aliases, "summary": summary })
+            })
+            .collect();
         let payload = serde_json::json!({
             "ok": true,
             "command": "list",
-            "data": {
-                "builtins": [
-                    {"name": "file-tree", "aliases": ["view-tree"], "summary": "Show a project directory tree"},
-                    {"name": "file-info", "aliases": ["fileinfo"], "summary": "Inspect file metadata and text/binary format"},
-                    {"name": "md-toc", "aliases": ["mdtoc"], "summary": "Show Markdown headings with line numbers"},
-                    {"name": "patch-edit", "aliases": ["patch"], "summary": "Apply SEARCH/REPLACE patch blocks"},
-                    {"name": "now", "aliases": [], "summary": "Print the current date and time"},
-                    {"name": "list", "aliases": [], "summary": "List built-in and mapped commands"}
-                ],
-                "mapped": config.commands
-            },
+            "data": { "builtins": builtin_json, "mapped": config.commands },
             "warnings": [],
             "meta": {}
         });
@@ -163,19 +173,22 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
         return Ok(0);
     }
 
+    let max_width = builtins.iter().map(|(n, _, _)| n.len()).max().unwrap_or(0);
     println!("Built-in commands:");
-    println!("  file-tree     Show a project directory tree. Alias: view-tree");
-    println!("  file-info     Inspect file metadata and text/binary format. Alias: fileinfo");
-    println!("  md-toc        Show Markdown heading outline. Alias: mdtoc");
-    println!("  patch-edit    Apply SEARCH/REPLACE patch blocks. Alias: patch");
-    println!("  now           Print the current date and time");
-    println!("  list          List built-in and mapped commands");
+    for (name, aliases, summary) in &builtins {
+        let alias_str = if aliases.is_empty() {
+            String::new()
+        } else {
+            format!(" (alias: {})", aliases.join(", "))
+        };
+        println!("  {name:<max_width$}  {summary}{alias_str}");
+    }
 
     if !config.commands.is_empty() {
         println!("\nMapped commands:");
-        for (name, cmd) in config.commands {
-            if let Some(summary) = cmd.summary {
-                println!("  {name:<13} {summary}");
+        for (name, cmd) in &config.commands {
+            if let Some(summary) = &cmd.summary {
+                println!("  {name:<max_width$}  {summary}");
             } else {
                 println!("  {name}");
             }
