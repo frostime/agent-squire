@@ -223,8 +223,8 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
         matched.search_line_count,
         matched.replace_line_count,
     );
-    result.match_mode = Some(matched.match_mode);
-    result.match_line = Some(matched.match_line);
+    result.match_mode = matched.match_mode;
+    result.match_line = matched.match_line;
     Ok(result)
 }
 
@@ -312,16 +312,8 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                         m.search_line_count,
                         m.replace_line_count,
                     );
-                    result.match_mode = if m.match_mode.is_empty() {
-                        None
-                    } else {
-                        Some(m.match_mode.clone())
-                    };
-                    result.match_line = if m.match_line == 0 {
-                        None
-                    } else {
-                        Some(m.match_line)
-                    };
+                    result.match_mode = m.match_mode.clone();
+                    result.match_line = m.match_line;
                     result
                 } else {
                     match_to_result(m)
@@ -378,16 +370,8 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                 m.search_line_count,
                 m.replace_line_count,
             );
-            result.match_mode = if m.match_mode.is_empty() {
-                None
-            } else {
-                Some(m.match_mode.clone())
-            };
-            result.match_line = if m.match_line == 0 {
-                None
-            } else {
-                Some(m.match_line)
-            };
+            result.match_mode = m.match_mode.clone();
+            result.match_line = m.match_line;
             result
         })
         .collect()
@@ -407,8 +391,8 @@ fn match_patch(
     let fail = |status: &str,
                 error: Option<String>,
                 related_lines: Option<Vec<usize>>,
-                match_mode: String,
-                match_line: usize| PatchMatch {
+                match_mode: Option<String>,
+                match_line: Option<usize>| PatchMatch {
         patch: patch.clone(),
         abs_start: 0,
         abs_end: 0,
@@ -429,8 +413,8 @@ fn match_patch(
             "parse_error",
             Some("SEARCH content is empty, this is not allowed when the target file is non-empty (ambiguous match)".into()),
             None,
-            String::new(),
-            0,
+            None,
+            None,
         );
     }
 
@@ -440,12 +424,12 @@ fn match_patch(
                 "no_change_patch",
                 Some("SEARCH is empty and REPLACE would not change the file".into()),
                 None,
-                String::new(),
-                0,
+                None,
+                None,
             );
         }
 
-        let mut matched = fail("matched", None, None, String::new(), 0);
+        let mut matched = fail("matched", None, None, None, None);
         matched.abs_start = 0;
         matched.abs_end = 0;
         return matched;
@@ -456,8 +440,8 @@ fn match_patch(
             "no_change_patch",
             Some("SEARCH and REPLACE are identical".into()),
             None,
-            String::new(),
-            0,
+            None,
+            None,
         );
     }
 
@@ -465,7 +449,7 @@ fn match_patch(
         let total_lines = file_lines.len();
         let (start, end) = match normalize_line_range(range, total_lines) {
             Ok(v) => v,
-            Err(error) => return fail("invalid_line_range", Some(error), None, String::new(), 0),
+            Err(error) => return fail("invalid_line_range", Some(error), None, None, None),
         };
 
         let start_idx = start - 1;
@@ -479,8 +463,8 @@ fn match_patch(
                     format_line_range(patch.line_range)
                 )),
                 None,
-                String::new(),
-                0,
+                None,
+                None,
             );
         }
 
@@ -498,8 +482,8 @@ fn match_patch(
             patch: patch.clone(),
             abs_start,
             abs_end: abs_start + search_lines.len(),
-            match_mode: search_mode.unwrap_or_default(),
-            match_line: abs_start + 1,
+            match_mode: search_mode,
+            match_line: Some(abs_start + 1),
             status: "matched".into(),
             error: None,
             related_lines: None,
@@ -522,8 +506,8 @@ fn match_patch(
                 "SEARCH and REPLACE both exist in scope; narrow the line range".into()
             }),
             Some(related),
-            search_mode.unwrap_or_default(),
-            0,
+            search_mode,
+            None,
         );
     }
 
@@ -532,8 +516,8 @@ fn match_patch(
             "already_applied",
             Some("SEARCH not found, but REPLACE already exists".into()),
             None,
-            replace_mode.unwrap_or_default(),
-            prefix_len + replace_matches[0] + 1,
+            replace_mode,
+            Some(prefix_len + replace_matches[0] + 1),
         );
     }
 
@@ -546,8 +530,8 @@ fn match_patch(
             "replace_ambiguous",
             Some("SEARCH not found, and REPLACE matched multiple locations".into()),
             Some(related),
-            replace_mode.unwrap_or_default(),
-            0,
+            replace_mode,
+            None,
         );
     }
 
@@ -555,8 +539,8 @@ fn match_patch(
         "search_not_found",
         Some("SEARCH content not found in scope".into()),
         None,
-        String::new(),
-        0,
+        None,
+        None,
     )
 }
 
@@ -660,16 +644,8 @@ fn match_to_result(m: &PatchMatch) -> PatchApplyResult {
         m.search_line_count,
         m.replace_line_count,
     );
-    result.match_mode = if m.match_mode.is_empty() {
-        None
-    } else {
-        Some(m.match_mode.clone())
-    };
-    result.match_line = if m.match_line == 0 {
-        None
-    } else {
-        Some(m.match_line)
-    };
+    result.match_mode = m.match_mode.clone();
+    result.match_line = m.match_line;
     result.related_lines = m.related_lines.clone();
     result
 }

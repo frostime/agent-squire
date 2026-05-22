@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, SecondsFormat};
 use clap::Args;
-use encoding_rs::{GBK, WINDOWS_1252};
+use encoding_rs::GBK;
 use glob::glob;
 use serde::Serialize;
 use walkdir::WalkDir;
@@ -197,13 +197,20 @@ fn add_existing(
     Ok(())
 }
 
+fn read_sample(path: &Path, size: u64) -> Result<Vec<u8>> {
+    use std::io::Read;
+    let read_len = size.min(TEXT_SAMPLE_BYTES) as usize;
+    let mut buf = vec![0u8; read_len];
+    let mut f = fs::File::open(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    f.read_exact(&mut buf)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    Ok(buf)
+}
+
 fn inspect_file(path: &Path) -> Result<FileInfo> {
     let stat = fs::metadata(path).with_context(|| format!("failed to stat {}", path.display()))?;
-    let mut sample =
-        fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    if sample.len() as u64 > TEXT_SAMPLE_BYTES {
-        sample.truncate(TEXT_SAMPLE_BYTES as usize);
-    }
+    let sample = read_sample(path, stat.len())?;
 
     let (bom, bom_encoding) = detect_bom(&sample);
     let is_binary = is_binary_data(&sample, bom_encoding.as_deref());
@@ -278,11 +285,8 @@ fn guess_encoding(data: &[u8], bom_encoding: Option<&str>, is_binary: bool) -> S
     if !had_errors {
         return "gbk".into();
     }
-    let (_, _, had_errors) = WINDOWS_1252.decode(data);
-    if !had_errors {
-        return "windows-1252".into();
-    }
-    "unknown".into()
+    // latin1 accepts all byte sequences — use it as final fallback (matches Python behavior)
+    "latin1".into()
 }
 
 fn detect_newline(data: &[u8], is_binary: bool) -> String {
@@ -291,13 +295,20 @@ fn detect_newline(data: &[u8], is_binary: bool) -> String {
     }
 
     let has_crlf = data.windows(2).any(|w| w == b"\r\n");
-    let mut stripped = data.to_vec();
-    stripped = stripped
-        .windows(2)
-        .enumerate()
-        .filter_map(|(idx, pair)| if pair == b"\r\n" { None } else { Some(idx) })
-        .filter_map(|idx| stripped.get(idx).copied())
-        .collect::<Vec<_>>();
+    // Strip CRLF pairs, then check for standalone LF / CR
+    let stripped: Vec<u8> = {
+        let mut out = Vec::with_capacity(data.len());
+        let mut i = 0;
+        while i < data.len() {
+            if i + 1 < data.len() && data[i] == b'\r' && data[i + 1] == b'\n' {
+                i += 2;
+            } else {
+                out.push(data[i]);
+                i += 1;
+            }
+        }
+        out
+    };
 
     let has_lf = stripped.contains(&b'\n');
     let has_cr = stripped.contains(&b'\r');
@@ -317,36 +328,50 @@ fn count_lines(path: &Path, encoding: &str, size_bytes: u64, is_binary: bool) ->
     }
 
     let raw = fs::read(path).ok()?;
-    let text = match encoding {
-        "utf-8" => String::from_utf8(raw).ok()?,
-        "utf-8-sig" => String::from_utf8(
-            raw.strip_prefix(&[0xEF, 0xBB, 0xBF])
-                .unwrap_or(&raw)
-                .to_vec(),
-        )
-        .ok()?,
-        "gbk" => {
-            let (cow, _, had_errors) = GBK.decode(&raw);
-            if had_errors {
-                return None;
-            }
-            cow.into_owned()
-        }
-        "windows-1252" => {
-            let (cow, _, had_errors) = WINDOWS_1252.decode(&raw);
-            if had_errors {
-                return None;
-            }
-            cow.into_owned()
-        }
-        _ => return None,
-    };
 
-    if text.is_empty() {
-        Some(0)
-    } else {
-        Some(text.lines().count())
+    // For line counting we only need to find \n and \r bytes.
+    // For latin1/utf-8/gbk these are always single-byte, so we can count from raw bytes directly.
+    if raw.is_empty() {
+        return Some(0);
     }
+
+    // Validate decoding (to confirm it's actually the claimed encoding)
+    match encoding {
+        "utf-8" => { std::str::from_utf8(&raw).ok()?; }
+        "utf-8-sig" => {
+            let data = raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw);
+            std::str::from_utf8(data).ok()?;
+        }
+        "gbk" => {
+            let (_, _, had_errors) = GBK.decode(&raw);
+            if had_errors { return None; }
+        }
+        "latin1" => {} // all byte sequences are valid latin1
+        _ => return None,
+    }
+
+    // Count line separators: \n, \r\n, standalone \r
+    let mut separators = 0usize;
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] == b'\r' {
+            separators += 1;
+            if i + 1 < raw.len() && raw[i + 1] == b'\n' {
+                i += 2;
+            } else {
+                i += 1;
+            }
+        } else if raw[i] == b'\n' {
+            separators += 1;
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+
+    let last = raw.last().copied();
+    let ends_with_newline = last == Some(b'\n') || last == Some(b'\r');
+    Some(if ends_with_newline { separators } else { separators + 1 })
 }
 
 fn display_path(path: &Path) -> String {
@@ -363,7 +388,9 @@ fn has_glob_magic(source: &str) -> bool {
 
 fn expand_home(source: &str) -> String {
     if let Some(rest) = source.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
+        if let Ok(home) = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+        {
             return format!("{home}/{rest}");
         }
     }
