@@ -18,9 +18,9 @@ path = "src/lib.rs"
 name = "squire"
 path = "src/bin/squire.rs"
 
-# [[bin]]
-# name = "agent-squire"
-# path = "src/bin/agent-squire.rs"
+[[bin]]
+name = "agent-squire"
+path = "src/bin/agent-squire.rs"
 
 [[bin]]
 name = "asq"

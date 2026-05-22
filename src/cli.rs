@@ -75,31 +75,12 @@ pub enum CliCommand {
     #[command(about = "List built-in and mapped commands")]
     List(ListArgs),
 
-    // #[command(about = "Inspect external command mappings")]
-    // Map(MapArgs),
-
     #[command(external_subcommand)]
     External(Vec<OsString>),
 }
 
 #[derive(Args, Debug)]
 pub struct ListArgs {}
-
-#[derive(Args, Debug)]
-#[command(disable_help_subcommand = true)]
-pub struct MapArgs {
-    #[command(subcommand)]
-    pub command: Option<MapCommand>,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum MapCommand {
-    #[command(about = "List mapped commands")]
-    List,
-
-    #[command(about = "Show mapping config locations and format")]
-    Help,
-}
 
 pub fn main_entry() -> ExitCode {
     match try_main() {
@@ -135,8 +116,6 @@ fn try_main() -> Result<u8> {
         CliCommand::Toc(args) => builtins::toc::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
         CliCommand::List(_) => run_list(&ctx),
-        // TODO
-        // CliCommand::Map(args) => run_map(args, &ctx),
         CliCommand::External(raw) => {
             if raw.is_empty() {
                 bail!("missing external command name");
@@ -165,8 +144,7 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
                     {"name": "file-info", "aliases": ["fileinfo"], "summary": "Inspect file metadata and text/binary format"},
                     {"name": "md-toc", "aliases": ["mdtoc"], "summary": "Show Markdown headings with line numbers"},
                     {"name": "patch-edit", "aliases": ["patch"], "summary": "Apply SEARCH/REPLACE patch blocks"},
-                    {"name": "list", "aliases": [], "summary": "List built-in and mapped commands"},
-                    {"name": "map", "aliases": [], "summary": "Inspect external command mappings"}
+                    {"name": "list", "aliases": [], "summary": "List built-in and mapped commands"}
                 ],
                 "mapped": config.commands
             },
@@ -183,7 +161,6 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
     println!("  md-toc        Show Markdown heading outline. Alias: mdtoc");
     println!("  patch-edit    Apply SEARCH/REPLACE patch blocks. Alias: patch");
     println!("  list          List built-in and mapped commands");
-    println!("  map           Inspect external command mappings");
 
     if !config.commands.is_empty() {
         println!("\nMapped commands:");
@@ -198,33 +175,4 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
     Ok(0)
 }
 
-/// TODO 后面再说，现在先不要
-fn _run_map(args: MapArgs, _ctx: &CommandContext) -> Result<u8> {
-    match args.command.unwrap_or(MapCommand::List) {
-        MapCommand::List => {
-            let config = external::load_config();
-            if config.commands.is_empty() {
-                println!("No mapped commands found.");
-                println!("Checked:");
-                for path in external::config_paths() {
-                    println!("  {}", path.display());
-                }
-                return Ok(0);
-            }
-            for (name, cmd) in config.commands {
-                println!("{name}");
-                if let Some(summary) = cmd.summary {
-                    println!("  summary: {summary}");
-                }
-                println!("  run: {}", cmd.run.join(" "));
-                println!("  print_aware: {}", cmd.print_aware);
-                println!("  expand_args: {}", cmd.expand_args);
-            }
-            Ok(0)
-        }
-        MapCommand::Help => {
-            println!("{}", external::MAP_HELP);
-            Ok(0)
-        }
-    }
-}
+
