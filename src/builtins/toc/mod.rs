@@ -10,17 +10,21 @@ use crate::runtime::output::{self, Envelope, PrintMode};
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Pre-scan Markdown files before reading. Outputs file size metadata and heading structure with 1-based line numbers."
+    long_about = "Pre-scan Markdown files and print their heading structure with 1-based line numbers.\n\nUse this when an agent needs to navigate long Markdown documents before selecting exact line ranges to read. It is a discovery tool for Markdown headings, not a full Markdown parser and not a text search command. Use `rg` for search and `read-lines` after choosing target lines.\n\nInputs may be Markdown files, directories, or glob patterns. Directories are searched recursively for .md files.",
+    after_help = "Examples:\n  squire md-toc README.md\n  squire md-toc docs --depth 3\n  squire md-toc \"docs/**/*.md\"\n  squire --print json md-toc README.md docs --depth 2"
 )]
 pub struct TocArgs {
-    #[arg(default_value = ".", help = "Files, directories, or glob patterns")]
+    #[arg(
+        default_value = ".",
+        help = "Markdown files, directories, or glob patterns"
+    )]
     pub sources: Vec<String>,
 
     #[arg(
         long,
         default_value_t = 6,
         value_name = "N",
-        help = "Maximum heading depth, clamped to 1..6"
+        help = "Maximum heading depth to include, clamped to 1..6"
     )]
     pub depth: usize,
 }
@@ -70,7 +74,11 @@ pub fn run(args: TocArgs, ctx: &CommandContext) -> Result<u8> {
     // Use first directory source as display base, if any
     let base = sources.iter().find_map(|s| {
         let p = PathBuf::from(s);
-        if p.is_dir() { Some(p) } else { None }
+        if p.is_dir() {
+            Some(p)
+        } else {
+            None
+        }
     });
 
     let results = files

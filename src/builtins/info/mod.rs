@@ -19,10 +19,11 @@ const GLOB_CHARS: &[char] = &['*', '?', '['];
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Inspect one or more files. Supports files, directories, and glob patterns. Directories are expanded recursively."
+    long_about = "Inspect file metadata and text/binary format without printing file contents.\n\nUse this when an agent needs to decide whether a file is safe/useful to read: size, binary/text kind, detected encoding, newline style, BOM, modified time, and line count when available. It accepts files, directories, and glob patterns; directories are expanded recursively.\n\nThis command does not search inside files and does not summarize content. Use `rg` for search, `md-toc` for Markdown heading navigation, and `read-lines` to read selected line ranges.",
+    after_help = "Examples:\n  squire file-info README.md src/cli.rs\n  squire file-info src --max-files 20\n  squire file-info \"docs/**/*.md\"\n  squire --print json file-info README.md"
 )]
 pub struct InfoArgs {
-    #[arg(help = "Files, directories, or glob patterns")]
+    #[arg(help = "Files, directories, or glob patterns to inspect")]
     pub sources: Vec<String>,
 
     #[arg(long, value_name = "N", help = "Maximum number of files to inspect")]
@@ -180,8 +181,8 @@ fn read_sample(path: &Path, size: u64) -> Result<Vec<u8>> {
     use std::io::Read;
     let read_len = size.min(TEXT_SAMPLE_BYTES) as usize;
     let mut buf = vec![0u8; read_len];
-    let mut f = fs::File::open(path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
+    let mut f =
+        fs::File::open(path).with_context(|| format!("failed to read {}", path.display()))?;
     f.read_exact(&mut buf)
         .with_context(|| format!("failed to read {}", path.display()))?;
     Ok(buf)
@@ -316,14 +317,18 @@ fn count_lines(path: &Path, encoding: &str, size_bytes: u64, is_binary: bool) ->
 
     // Validate decoding (to confirm it's actually the claimed encoding)
     match encoding {
-        "utf-8" => { std::str::from_utf8(&raw).ok()?; }
+        "utf-8" => {
+            std::str::from_utf8(&raw).ok()?;
+        }
         "utf-8-sig" => {
             let data = raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw);
             std::str::from_utf8(data).ok()?;
         }
         "gbk" => {
             let (_, _, had_errors) = GBK.decode(&raw);
-            if had_errors { return None; }
+            if had_errors {
+                return None;
+            }
         }
         "latin1" => {} // all byte sequences are valid latin1
         _ => return None,
@@ -350,7 +355,11 @@ fn count_lines(path: &Path, encoding: &str, size_bytes: u64, is_binary: bool) ->
 
     let last = raw.last().copied();
     let ends_with_newline = last == Some(b'\n') || last == Some(b'\r');
-    Some(if ends_with_newline { separators } else { separators + 1 })
+    Some(if ends_with_newline {
+        separators
+    } else {
+        separators + 1
+    })
 }
 
 fn display_path(path: &Path) -> String {
@@ -367,9 +376,7 @@ fn has_glob_magic(source: &str) -> bool {
 
 fn expand_home(source: &str) -> String {
     if let Some(rest) = source.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-        {
+        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
             return format!("{home}/{rest}");
         }
     }
@@ -403,12 +410,10 @@ fn print_compact_info(infos: &[FileInfo], missing: &[String], cwd: &Path) {
 fn make_relative<'a>(path: &'a str, cwd: &str) -> String {
     // Strip Windows extended-length prefix
     let clean = path.strip_prefix(r"//?/").unwrap_or(path);
-    let clean = clean.strip_prefix(r"\\?\")
-        .unwrap_or(clean);
+    let clean = clean.strip_prefix(r"\\?\").unwrap_or(clean);
     // Try to make relative to cwd
     let cwd_clean = cwd.strip_prefix(r"//?/").unwrap_or(cwd);
-    let cwd_clean = cwd_clean.strip_prefix(r"\\?\")
-        .unwrap_or(cwd_clean);
+    let cwd_clean = cwd_clean.strip_prefix(r"\\?\").unwrap_or(cwd_clean);
     // Normalize separators for comparison
     let norm_path = clean.replace('\\', "/");
     let norm_cwd = cwd_clean.replace('\\', "/");

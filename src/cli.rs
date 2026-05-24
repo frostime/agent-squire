@@ -52,7 +52,11 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum CliCommand {
-    #[command(name = "file-tree", alias = "view-tree", about = "Show a project directory tree")]
+    #[command(
+        name = "file-tree",
+        alias = "view-tree",
+        about = "Show a project directory tree for orientation"
+    )]
     Tree(builtins::tree::TreeArgs),
 
     #[command(
@@ -62,8 +66,19 @@ pub enum CliCommand {
     )]
     Info(builtins::info::InfoArgs),
 
-    #[command(name = "md-toc", alias = "mdtoc", about = "Show Markdown headings with line numbers")]
+    #[command(
+        name = "md-toc",
+        alias = "mdtoc",
+        about = "Show Markdown headings with 1-based line numbers"
+    )]
     Toc(builtins::toc::TocArgs),
+
+    #[command(
+        name = "read-lines",
+        alias = "lines",
+        about = "Read known 1-based line slices from one text file"
+    )]
+    ReadLines(builtins::read_lines::ReadLinesArgs),
 
     #[command(
         name = "patch-edit",
@@ -72,7 +87,7 @@ pub enum CliCommand {
     )]
     PatchEdit(builtins::patch_edit::PatchEditArgs),
 
-    #[command(name = "now", about = "Print the current date and time")]
+    #[command(name = "now", about = "Print the current local date and time")]
     Now(NowArgs),
 
     #[command(about = "List built-in and mapped commands")]
@@ -83,9 +98,17 @@ pub enum CliCommand {
 }
 
 #[derive(Args, Debug)]
+#[command(
+    long_about = "Print the current local date and time.\n\nUse this when an agent needs a deterministic CLI-accessible timestamp from the local machine. Compact output is human-readable; JSON output returns separate date/time fields plus timezone.",
+    after_help = "Examples:\n  squire now\n  squire --print json now"
+)]
 pub struct NowArgs {}
 
 #[derive(Args, Debug)]
+#[command(
+    long_about = "List built-in Squire commands and configured external command mappings.\n\nUse this when an agent needs to discover available tools, aliases, and short command summaries in the current environment. JSON output includes built-in command metadata and mapped command configuration.",
+    after_help = "Examples:\n  squire list\n  squire --print json list"
+)]
 pub struct ListArgs {}
 
 pub fn main_entry() -> ExitCode {
@@ -120,6 +143,7 @@ fn try_main() -> Result<u8> {
         CliCommand::Tree(args) => builtins::tree::run(args, &ctx),
         CliCommand::Info(args) => builtins::info::run(args, &ctx),
         CliCommand::Toc(args) => builtins::toc::run(args, &ctx),
+        CliCommand::ReadLines(args) => builtins::read_lines::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
         CliCommand::Now(_) => builtins::now::run(&ctx),
         CliCommand::List(_) => run_list(&ctx),

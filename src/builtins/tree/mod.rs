@@ -12,26 +12,37 @@ use crate::runtime::output::{self, Envelope, PrintMode};
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Display directory trees. Respects nested .gitignore files \
-and always hides common noise such as .git and node_modules unless --no-gitignore is used."
+    long_about = "Display a compact project directory tree for orientation before reading files.\n\nUse this when an agent needs to understand repository layout, choose likely files, or inspect a subdirectory without dumping file contents. By default it respects nested .gitignore files and hides common noise such as .git, node_modules, __pycache__, and cache directories.\n\nUse `--depth` to keep context small, `--dirs-only` for high-level structure, and `--detail` only when line/character counts are useful for deciding what to read next.",
+    after_help = "Examples:\n  squire file-tree . -d 2\n  squire file-tree src tests --dirs-only\n  squire file-tree . --show-size\n  squire file-tree docs --detail\n  squire --print json file-tree src -d 3"
 )]
 pub struct TreeArgs {
     #[arg(default_value = ".", help = "Directories to display")]
     pub paths: Vec<PathBuf>,
 
-    #[arg(short = 'd', long = "depth", value_name = "N", help = "Maximum depth")]
+    #[arg(
+        short = 'd',
+        long = "depth",
+        value_name = "N",
+        help = "Maximum tree depth to display"
+    )]
     pub depth: Option<usize>,
 
-    #[arg(long, help = "Do not apply .gitignore or built-in skip rules")]
+    #[arg(
+        long,
+        help = "Include files normally hidden by .gitignore and built-in skip rules"
+    )]
     pub no_gitignore: bool,
 
-    #[arg(long, help = "Show only directories")]
+    #[arg(long, help = "Show directory structure only, omitting files")]
     pub dirs_only: bool,
 
-    #[arg(long = "show-size", help = "Show file sizes")]
+    #[arg(long = "show-size", help = "Show file sizes in compact output")]
     pub show_size: bool,
 
-    #[arg(long, help = "Show line/character counts for UTF-8 text files")]
+    #[arg(
+        long,
+        help = "Show UTF-8 text file line/character counts for read planning"
+    )]
     pub detail: bool,
 
     #[arg(
@@ -198,7 +209,13 @@ fn build_tree(root: &Path, args: &TreeArgs) -> Result<TreeNode> {
             Vec::new()
         };
 
-        TreeNode { name, full_path: path.to_path_buf(), is_dir, size, children }
+        TreeNode {
+            name,
+            full_path: path.to_path_buf(),
+            is_dir,
+            size,
+            children,
+        }
     }
 
     // Build a virtual root node
@@ -269,7 +286,11 @@ fn render_tree_node(node: &TreeNode, args: &TreeArgs, prefix: &str, out: &mut Ve
 
     for (idx, child) in children.iter().enumerate() {
         let is_last = idx + 1 == children.len();
-        let connector = if is_last { "\u{2514}\u{2500}\u{2500} " } else { "\u{251c}\u{2500}\u{2500} " };
+        let connector = if is_last {
+            "\u{2514}\u{2500}\u{2500} "
+        } else {
+            "\u{251c}\u{2500}\u{2500} "
+        };
         let mut label = child.name.clone();
 
         if child.is_dir {
@@ -288,10 +309,7 @@ fn render_tree_node(node: &TreeNode, args: &TreeArgs, prefix: &str, out: &mut Ve
         out.push(format!("{prefix}{connector}{label}"));
 
         if child.is_dir {
-            let child_prefix = format!(
-                "{prefix}{}",
-                if is_last { "    " } else { "\u{2502}   " }
-            );
+            let child_prefix = format!("{prefix}{}", if is_last { "    " } else { "\u{2502}   " });
             render_tree_node(child, args, &child_prefix, out);
         }
     }
@@ -334,7 +352,10 @@ fn print_json_output(outputs: &[(String, Vec<String>, Stats)]) -> Result<()> {
     Ok(())
 }
 
-fn print_compact_output(outputs: &[(String, Vec<String>, Stats)], out_file: Option<&Path>) -> Result<()> {
+fn print_compact_output(
+    outputs: &[(String, Vec<String>, Stats)],
+    out_file: Option<&Path>,
+) -> Result<()> {
     let mut text = String::new();
     for (idx, (_root, lines, stats)) in outputs.iter().enumerate() {
         if idx > 0 {
