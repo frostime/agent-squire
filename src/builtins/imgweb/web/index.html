@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Squire Image Prompt Composer</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#0f1115; --panel:#171a21; --muted:#8b93a7; --text:#eef1f7; --line:#2a2f3a; --accent:#73a7ff; --danger:#ff7b7b; --ok:#62d394; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--text); }
+    main { max-width:1100px; margin:0 auto; padding:24px; }
+    header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; }
+    h1 { margin:0 0 4px; font-size:24px; }
+    .muted { color:var(--muted); }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; }
+    #dropzone { border:2px dashed #3a4252; border-radius:16px; padding:36px; text-align:center; transition:.15s; cursor:pointer; }
+    #dropzone.drag { border-color:var(--accent); background:#172033; }
+    #dropzone strong { display:block; font-size:18px; margin-bottom:6px; }
+    input[type="file"] { display:none; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:16px 0; }
+    button { border:1px solid var(--line); border-radius:10px; padding:8px 11px; background:#202633; color:var(--text); cursor:pointer; }
+    button:hover { border-color:var(--accent); }
+    button.danger:hover { border-color:var(--danger); color:var(--danger); }
+    button.primary { background:#244a86; border-color:#3568b5; }
+    .grid { display:grid; gap:12px; }
+    .item { display:grid; grid-template-columns:160px 1fr auto; gap:14px; align-items:start; }
+    .thumb { width:160px; height:110px; object-fit:contain; background:#0b0d12; border:1px solid var(--line); border-radius:10px; }
+    label { display:block; color:var(--muted); font-size:12px; margin-bottom:4px; }
+    input[type="text"], textarea { width:100%; border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:#0f131b; color:var(--text); font:inherit; }
+    textarea { min-height:66px; resize:vertical; }
+    .fields { display:grid; gap:10px; }
+    .actions { display:flex; flex-direction:column; gap:8px; }
+    pre { white-space:pre-wrap; word-break:break-word; background:#0b0d12; border:1px solid var(--line); border-radius:12px; padding:14px; min-height:100px; }
+    .status { min-height:22px; color:var(--muted); }
+    .empty { padding:24px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:12px; }
+    @media (max-width:760px) { main { padding:14px; } header,.item { display:block; } .thumb { width:100%; height:180px; margin-bottom:10px; } .actions { flex-direction:row; flex-wrap:wrap; margin-top:10px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Image Prompt Composer</h1>
+      <div class="muted">Paste, drop, annotate, order, then copy a Markdown prompt for your agent.</div>
+    </div>
+    <div class="muted" id="sessionDir"></div>
+  </header>
+
+  <section id="dropzone" class="panel">
+    <strong>Paste / Drop images here</strong>
+    <div class="muted">Ctrl/⌘+V, drag files, or click to select images.</div>
+    <input id="fileInput" type="file" accept="image/*" multiple />
+  </section>
+
+  <div class="toolbar">
+    <button class="primary" id="copyPrompt">Copy Prompt</button>
+    <button id="refreshPrompt">Refresh Prompt</button>
+    <button class="danger" id="clearAll">Clear</button>
+    <span class="status" id="status"></span>
+  </div>
+
+  <section class="grid" id="images"></section>
+
+  <h2>Prompt</h2>
+  <pre id="prompt"></pre>
+</main>
+
+<script>
+const token = new URLSearchParams(location.search).get('token') || '';
+const api = path => `/api/v1/img${path}`;
+const fileUrl = path => `${path}?token=${encodeURIComponent(token)}`;
+const headers = () => ({ 'X-Squire-Token': token });
+let images = [];
+
+const $ = id => document.getElementById(id);
+const status = msg => { $('status').textContent = msg; if (msg) setTimeout(() => $('status').textContent = '', 3000); };
+
+async function request(path, options = {}) {
+  const res = await fetch(api(path), { ...options, headers: { ...headers(), ...(options.headers || {}) } });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.ok === false) throw new Error(json.error || res.statusText);
+  return json.data;
+}
+
+async function load() {
+  const data = await request('/session');
+  images = data.images || [];
+  $('sessionDir').textContent = data.session_dir || '';
+  renderImages();
+  await refreshPrompt();
+}
+
+function renderImages() {
+  const root = $('images');
+  root.innerHTML = '';
+  if (!images.length) {
+    root.innerHTML = '<div class="empty">No images yet.</div>';
+    return;
+  }
+  images.forEach((img, index) => {
+    const el = document.createElement('article');
+    el.className = 'panel item';
+    el.innerHTML = `
+      <img class="thumb" src="${fileUrl(img.preview_url)}" alt="${escapeHtml(img.slug)}">
+      <div class="fields">
+        <div><label>Slug</label><input type="text" value="${escapeAttr(img.slug)}" data-field="slug"></div>
+        <div><label>Hint</label><textarea data-field="hint">${escapeHtml(img.hint || '')}</textarea></div>
+        <div class="muted">${escapeHtml(img.path)}</div>
+      </div>
+      <div class="actions">
+        <button data-action="up" ${index === 0 ? 'disabled' : ''}>↑</button>
+        <button data-action="down" ${index === images.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="danger" data-action="delete">Delete</button>
+      </div>`;
+    el.querySelector('[data-field="slug"]').addEventListener('change', e => updateImage(img.id, { slug: e.target.value }));
+    el.querySelector('[data-field="hint"]').addEventListener('change', e => updateImage(img.id, { hint: e.target.value }));
+    el.querySelector('[data-action="up"]').addEventListener('click', () => move(index, -1));
+    el.querySelector('[data-action="down"]').addEventListener('click', () => move(index, 1));
+    el.querySelector('[data-action="delete"]').addEventListener('click', () => deleteImage(img.id));
+    root.appendChild(el);
+  });
+}
+
+async function uploadFiles(files, source) {
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue;
+    const form = new FormData();
+    form.append('file', file, file.name || 'image.png');
+    form.append('source', source);
+    await fetch(api('/images'), { method:'POST', headers:headers(), body:form })
+      .then(async res => { const json = await res.json(); if (!res.ok) throw new Error(json.error || res.statusText); });
+  }
+  status('Uploaded');
+  await load();
+}
+
+async function updateImage(id, body) {
+  await request(`/images/${id}`, { method:'PATCH', headers:{ ...headers(), 'Content-Type':'application/json' }, body:JSON.stringify(body) });
+  status('Updated');
+  await load();
+}
+
+async function deleteImage(id) {
+  images = await request(`/images/${id}`, { method:'DELETE' });
+  renderImages();
+  await refreshPrompt();
+}
+
+async function move(index, delta) {
+  const copy = images.slice();
+  const [item] = copy.splice(index, 1);
+  copy.splice(index + delta, 0, item);
+  images = await request('/images/reorder', { method:'POST', headers:{ ...headers(), 'Content-Type':'application/json' }, body:JSON.stringify({ ids:copy.map(x => x.id) }) });
+  renderImages();
+  await refreshPrompt();
+}
+
+async function refreshPrompt() {
+  const data = await request('/prompt');
+  $('prompt').textContent = data.prompt || '';
+}
+
+$('copyPrompt').addEventListener('click', async () => {
+  await refreshPrompt();
+  await navigator.clipboard.writeText($('prompt').textContent);
+  status('Prompt copied');
+});
+$('refreshPrompt').addEventListener('click', refreshPrompt);
+$('clearAll').addEventListener('click', async () => {
+  if (!confirm('Clear all images in this session?')) return;
+  images = await request('/clear', { method:'POST' });
+  renderImages();
+  await refreshPrompt();
+});
+
+const drop = $('dropzone');
+drop.addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', e => uploadFiles(e.target.files, 'picker'));
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); uploadFiles(e.dataTransfer.files, 'drag'); });
+document.addEventListener('paste', e => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length) uploadFiles(files, 'paste');
+});
+
+function escapeHtml(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+
+load().catch(err => status(err.message));
+</script>
+</body>
+</html>

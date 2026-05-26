@@ -1,3 +1,4 @@
+pub mod imgweb;
 pub mod info;
 pub mod now;
 pub mod patch_edit;

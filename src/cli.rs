@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand};
 
 use crate::builtins;
@@ -87,6 +87,12 @@ pub enum CliCommand {
     )]
     PatchEdit(builtins::patch_edit::PatchEditArgs),
 
+    #[command(
+        name = "imgweb",
+        about = "Start a local web UI for composing multi-image prompts"
+    )]
+    ImgWeb(builtins::imgweb::ImgWebArgs),
+
     #[command(name = "now", about = "Print the current local date and time")]
     Now(NowArgs),
 
@@ -145,6 +151,7 @@ fn try_main() -> Result<u8> {
         CliCommand::Toc(args) => builtins::toc::run(args, &ctx),
         CliCommand::ReadLines(args) => builtins::read_lines::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
+        CliCommand::ImgWeb(args) => builtins::imgweb::run(args, &ctx),
         CliCommand::Now(_) => builtins::now::run(&ctx),
         CliCommand::List(_) => run_list(&ctx),
         CliCommand::External(raw) => {
