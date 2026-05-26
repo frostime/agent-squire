@@ -74,11 +74,7 @@ pub fn run(args: TocArgs, ctx: &CommandContext) -> Result<u8> {
     // Use first directory source as display base, if any
     let base = sources.iter().find_map(|s| {
         let p = PathBuf::from(s);
-        if p.is_dir() {
-            Some(p)
-        } else {
-            None
-        }
+        if p.is_dir() { Some(p) } else { None }
     });
 
     let results = files

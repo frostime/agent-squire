@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use super::io::{atomic_write_text, read_target_text_with_encoding, TextEncoding};
+use super::io::{TextEncoding, atomic_write_text, read_target_text_with_encoding};
 use super::model::{PatchApplyResult, PatchBlock, PatchMatch, PatchOperation};
 use super::parse::parse_patches;
 use super::text::{

@@ -5,7 +5,7 @@ mod output;
 mod parse;
 mod text;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Args;
 
 use crate::cli::CommandContext;

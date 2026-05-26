@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Read};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 pub fn read_text_source(source: &str) -> Result<String> {
     if source == "@stdin" {
