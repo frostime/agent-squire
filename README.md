@@ -138,6 +138,14 @@ Validate safely first:
 squire patch-edit @file:fix.patch --dry-run --print json
 ```
 
+Interactive input opens `$EDITOR`/`$VISUAL` when configured, dry-runs first, optionally shows a unified diff, then asks before applying:
+
+```bash
+asq patch -i
+```
+
+Without `$EDITOR`, paste into the terminal and submit with a single `.` line.
+
 ## Development
 
 ```bash
