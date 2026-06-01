@@ -2,6 +2,12 @@
 
 `agent-squire` is a local CLI toolbox for humans and agents.
 
+Install:
+
+```bash
+cargo install agent-squire
+```
+
 Binaries:
 
 ```bash
