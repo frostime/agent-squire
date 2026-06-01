@@ -4,7 +4,7 @@ All notable changes to `agent-squire` are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [v0.5.0] — 2026-06-01
 
 ### Added
 
