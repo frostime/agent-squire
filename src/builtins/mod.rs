@@ -1,5 +1,6 @@
 pub mod imgweb;
 pub mod info;
+pub mod md_links;
 pub mod now;
 pub mod patch_edit;
 pub mod read_lines;

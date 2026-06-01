@@ -74,6 +74,13 @@ pub enum CliCommand {
     Toc(builtins::toc::TocArgs),
 
     #[command(
+        name = "md-links",
+        alias = "mdlinks",
+        about = "Extract Markdown link references"
+    )]
+    MdLinks(builtins::md_links::MdLinksArgs),
+
+    #[command(
         name = "read-lines",
         alias = "lines",
         about = "Read known 1-based line slices from one text file"
@@ -149,6 +156,7 @@ fn try_main() -> Result<u8> {
         CliCommand::Tree(args) => builtins::tree::run(args, &ctx),
         CliCommand::Info(args) => builtins::info::run(args, &ctx),
         CliCommand::Toc(args) => builtins::toc::run(args, &ctx),
+        CliCommand::MdLinks(args) => builtins::md_links::run(args, &ctx),
         CliCommand::ReadLines(args) => builtins::read_lines::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
         CliCommand::ImgWeb(args) => builtins::imgweb::run(args, &ctx),

@@ -4,6 +4,14 @@ All notable changes to `agent-squire` are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- **`md-links` command** (alias `mdlinks`) — extracts Markdown link references for graph-building.
+  - Supports Markdown links/images, wiki links, inline code path refs, angle refs, and SiYuan block refs.
+  - Resolves file targets against source files and a workspace, with existence checks and JSON output.
+
 ## [v0.4.1] — 2026-05-28
 
 ### Added
