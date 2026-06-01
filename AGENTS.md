@@ -1,5 +1,9 @@
 ## Project-Specific Notes
 
+This project develop an CLI, see `project.md` file.
+
+CLI: `agent-squir`, with alias `squire` and `asq`.
+
 This codebase is agent-squire itself. Changes MUST maintain backwards compatibility for existing CLI commands and flags.
 
 ```bash
