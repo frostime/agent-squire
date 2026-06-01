@@ -6,7 +6,7 @@ edition = "2024"
 description = "A local CLI toolbox for humans and agents."
 license = "GPL-3.0"
 readme = "README.md"
-repository = "https://codeberg.org/frostime/agent-squire"
+repository = "https://github.com/frostime/agent-squire"
 keywords = ["cli", "agent", "toolbox", "patch"]
 categories = ["command-line-utilities", "development-tools"]
 
