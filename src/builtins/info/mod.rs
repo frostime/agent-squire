@@ -375,10 +375,10 @@ fn has_glob_magic(source: &str) -> bool {
 }
 
 fn expand_home(source: &str) -> String {
-    if let Some(rest) = source.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-            return format!("{home}/{rest}");
-        }
+    if let Some(rest) = source.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"))
+    {
+        return format!("{home}/{rest}");
     }
     source.to_string()
 }
@@ -407,7 +407,7 @@ fn print_compact_info(infos: &[FileInfo], missing: &[String], cwd: &Path) {
     }
 }
 
-fn make_relative<'a>(path: &'a str, cwd: &str) -> String {
+fn make_relative(path: &str, cwd: &str) -> String {
     // Strip Windows extended-length prefix
     let clean = path.strip_prefix(r"//?/").unwrap_or(path);
     let clean = clean.strip_prefix(r"\\?\").unwrap_or(clean);

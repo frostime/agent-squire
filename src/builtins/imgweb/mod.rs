@@ -123,10 +123,10 @@ async fn run_server(args: ImgWebArgs) -> Result<u8> {
     println!("Storage: {}", app.session_dir.display());
     println!("Press Ctrl+C to stop.");
 
-    if !args.no_open {
-        if let Err(err) = open::that(&url) {
-            eprintln!("warning: failed to open browser: {err}");
-        }
+    if !args.no_open
+        && let Err(err) = open::that(&url)
+    {
+        eprintln!("warning: failed to open browser: {err}");
     }
 
     axum::serve(listener, router)
@@ -183,7 +183,7 @@ async fn index() -> Html<&'static str> {
 
 async fn get_session(State(app): State<App>, headers: HeaderMap) -> Response {
     if let Err(resp) = require_token(&app, &headers) {
-        return resp;
+        return *resp;
     }
     let images = sorted_images(&app);
     ok(SessionData {
@@ -198,7 +198,7 @@ async fn upload_image(
     mut multipart: Multipart,
 ) -> Response {
     if let Err(resp) = require_token(&app, &headers) {
-        return resp;
+        return *resp;
     }
 
     let mut file_bytes = None;
@@ -293,16 +293,16 @@ async fn update_image(
     Json(req): Json<UpdateImageRequest>,
 ) -> Response {
     if let Err(resp) = require_token(&app, &headers) {
-        return resp;
+        return *resp;
     }
     let mut inner = app.inner.lock().expect("app state lock poisoned");
     let Some(item) = inner.images.iter_mut().find(|item| item.id == id) else {
         return error(StatusCode::NOT_FOUND, "image not found".to_string());
     };
-    if let Some(slug) = req.slug {
-        if let Some(slug) = sanitize_slug(Some(&slug)) {
-            item.slug = slug;
-        }
+    if let Some(slug) = req.slug
+        && let Some(slug) = sanitize_slug(Some(&slug))
+    {
+        item.slug = slug;
     }
     if let Some(hint) = req.hint {
         item.hint = hint;
@@ -316,7 +316,7 @@ async fn delete_image(
     Path(id): Path<String>,
 ) -> Response {
     if let Err(resp) = require_token(&app, &headers) {
-        return resp;
+        return *resp;
     }
     let mut inner = app.inner.lock().expect("app state lock poisoned");
     let Some(index) = inner.images.iter().position(|item| item.id == id) else {
@@ -333,7 +333,7 @@ async fn reorder_images(
     Json(req): Json<ReorderRequest>,
 ) -> Response {
     if let Err(resp) = require_token(&app, &headers) {
-        return resp;
+        return *resp;
     }
     let mut inner = app.inner.lock().expect("app state lock poisoned");
     for (index, id) in req.ids.iter().enumerate() {
@@ -346,7 +346,7 @@ async fn reorder_images(
 
 async fn clear_images(State(app): State<App>, headers: HeaderMap) -> Response {
     if let Err(resp) = require_token(&app, &headers) {
-        return resp;
+        return *resp;
     }
     let mut inner = app.inner.lock().expect("app state lock poisoned");
     for item in &inner.images {
@@ -358,7 +358,7 @@ async fn clear_images(State(app): State<App>, headers: HeaderMap) -> Response {
 
 async fn get_prompt(State(app): State<App>, headers: HeaderMap) -> Response {
     if let Err(resp) = require_token(&app, &headers) {
-        return resp;
+        return *resp;
     }
     ok(PromptData {
         format: "markdown",
@@ -408,11 +408,14 @@ async fn read_text_field(field: axum::extract::multipart::Field<'_>) -> Option<S
         .filter(|text| !text.is_empty())
 }
 
-fn require_token(app: &App, headers: &HeaderMap) -> std::result::Result<(), Response> {
+fn require_token(app: &App, headers: &HeaderMap) -> std::result::Result<(), Box<Response>> {
     if token_matches(app, headers, None) {
         Ok(())
     } else {
-        Err(error(StatusCode::UNAUTHORIZED, "invalid token".to_string()))
+        Err(Box::new(error(
+            StatusCode::UNAUTHORIZED,
+            "invalid token".to_string(),
+        )))
     }
 }
 

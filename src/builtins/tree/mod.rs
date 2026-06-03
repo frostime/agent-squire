@@ -130,7 +130,7 @@ fn build_tree(root: &Path, args: &TreeArgs) -> Result<TreeNode> {
         .git_ignore(!args.no_gitignore)
         .git_global(!args.no_gitignore)
         .git_exclude(!args.no_gitignore)
-        .sort_by_file_name(|a, b| sort_entry_name(a, b));
+        .sort_by_file_name(sort_entry_name);
 
     if let Some(max_depth) = args.depth {
         // +1 because WalkBuilder depth includes the root itself
@@ -359,7 +359,7 @@ fn print_compact_output(
     let mut text = String::new();
     for (idx, (_root, lines, stats)) in outputs.iter().enumerate() {
         if idx > 0 {
-            text.push_str("\n");
+            text.push('\n');
         }
         text.push_str(&lines.join("\n"));
         text.push_str(&format!(

@@ -250,10 +250,9 @@ fn editor_command(editor: &str) -> Result<Command> {
 fn split_editor_command(editor: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
-    let mut chars = editor.chars().peekable();
     let mut quote: Option<char> = None;
 
-    while let Some(ch) = chars.next() {
+    for ch in editor.chars() {
         match ch {
             '\'' | '"' if quote == Some(ch) => quote = None,
             '\'' | '"' if quote.is_none() => quote = Some(ch),

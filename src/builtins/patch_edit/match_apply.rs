@@ -336,22 +336,20 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
         new_lines.splice(m.abs_start..m.abs_end, replace_lines);
     }
 
-    if !dry_run {
-        if let Err(error) = atomic_write_text(file_path, &new_lines.concat(), encoding) {
-            return patches
-                .iter()
-                .map(|p| {
-                    base_result(
-                        p,
-                        false,
-                        "write_error",
-                        Some(format!("Failed to apply patch: {error}")),
-                        0,
-                        0,
-                    )
-                })
-                .collect();
-        }
+    if !dry_run && let Err(error) = atomic_write_text(file_path, &new_lines.concat(), encoding) {
+        return patches
+            .iter()
+            .map(|p| {
+                base_result(
+                    p,
+                    false,
+                    "write_error",
+                    Some(format!("Failed to apply patch: {error}")),
+                    0,
+                    0,
+                )
+            })
+            .collect();
     }
 
     matches

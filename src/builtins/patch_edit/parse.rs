@@ -11,6 +11,10 @@ const OVERWRITE_MARK: &str = "<<<<<<< OVERWRITE";
 const DELIM_MARK: &str = "=======";
 const REPLACE_MARK: &str = ">>>>>>> REPLACE";
 
+type LineRange = Option<(Option<usize>, Option<usize>)>;
+type PatchHeader = (PathBuf, String, LineRange);
+type PatchHeaderText = (String, LineRange);
+
 pub fn parse_patches(
     patch_text: &str,
     project_root: &Path,
@@ -87,7 +91,7 @@ pub fn parse_patches(
         });
     }
 
-    if patch_text.trim().len() > 0 && patches.is_empty() && errors.is_empty() {
+    if !patch_text.trim().is_empty() && patches.is_empty() && errors.is_empty() {
         errors.push("No valid patch blocks found. Ensure each block starts with '# <path>' followed by a SEARCH/REPLACE block.".into());
     }
 
@@ -190,10 +194,7 @@ fn operation_name(operation: &PatchOperation) -> &'static str {
     }
 }
 
-fn parse_patch_header(
-    header: &str,
-    project_root: &Path,
-) -> Result<(PathBuf, String, Option<(Option<usize>, Option<usize>)>), String> {
+fn parse_patch_header(header: &str, project_root: &Path) -> Result<PatchHeader, String> {
     let stripped = strip_line_ending(header);
     if !stripped.starts_with("# ") {
         return Err(format!("Invalid patch header: {header}"));
@@ -204,9 +205,7 @@ fn parse_patch_header(
     Ok((file_path, display_path, line_range))
 }
 
-fn parse_patch_header_text(
-    text: &str,
-) -> Result<(String, Option<(Option<usize>, Option<usize>)>), String> {
+fn parse_patch_header_text(text: &str) -> Result<PatchHeaderText, String> {
     if text.is_empty() {
         return Err(format!("Invalid patch header: {text}"));
     }
@@ -254,10 +253,10 @@ pub fn parse_line_range(text: &str) -> Result<(Option<usize>, Option<usize>), St
         return Err(format!("Invalid line range: {text}"));
     };
 
-    if let (Some(start), Some(end)) = out {
-        if end < start {
-            return Err(format!("Invalid line range: {text}"));
-        }
+    if let (Some(start), Some(end)) = out
+        && end < start
+    {
+        return Err(format!("Invalid line range: {text}"));
     }
 
     Ok(out)
