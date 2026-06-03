@@ -114,12 +114,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
-[v0.5.1]: https://codeberg.org/frostime/agent-squire/compare/v0.5.0...v0.5.1
-[v0.5.0]: https://codeberg.org/frostime/agent-squire/compare/v0.4.1...v0.5.0
-[v0.4.1]: https://codeberg.org/frostime/agent-squire/compare/v0.4.0...v0.4.1
-[v0.4.0]: https://codeberg.org/frostime/agent-squire/compare/v0.3.0...v0.4.0
-[v0.3.0]: https://codeberg.org/frostime/agent-squire/compare/v0.2.2...v0.3.0
-[v0.2.2]: https://codeberg.org/frostime/agent-squire/compare/v0.2.1...v0.2.2
-[v0.2.1]: https://codeberg.org/frostime/agent-squire/compare/v0.2.0...v0.2.1
-[v0.2.0]: https://codeberg.org/frostime/agent-squire/compare/v0.1.0...v0.2.0
-[v0.1.0]: https://codeberg.org/frostime/agent-squire/releases/tag/v0.1.0
+[v0.5.1]: https://github.com/frostime/agent-squire/compare/v0.5.0...v0.5.1
+[v0.5.0]: https://github.com/frostime/agent-squire/compare/v0.4.1...v0.5.0
+[v0.4.1]: https://github.com/frostime/agent-squire/compare/v0.4.0...v0.4.1
+[v0.4.0]: https://github.com/frostime/agent-squire/compare/v0.3.0...v0.4.0
+[v0.3.0]: https://github.com/frostime/agent-squire/compare/v0.2.2...v0.3.0
+[v0.2.2]: https://github.com/frostime/agent-squire/compare/v0.2.1...v0.2.2
+[v0.2.1]: https://github.com/frostime/agent-squire/compare/v0.2.0...v0.2.1
+[v0.2.0]: https://github.com/frostime/agent-squire/compare/v0.1.0...v0.2.0
+[v0.1.0]: https://github.com/frostime/agent-squire/releases/tag/v0.1.0
