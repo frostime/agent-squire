@@ -42,6 +42,39 @@ fn context_slice_reads_neighboring_lines_when_available() {
 }
 
 #[test]
+fn internal_slice_aliases_accept_line_prefix_and_colon_range() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("sample.txt"), "a\nb\nc\nd\n").unwrap();
+
+    let output = Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["lines", "sample.txt", "-s", "L2-L3", "-s", "2:3"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+
+    assert!(stdout.contains("@@ 2-3 requested=L2-L3"));
+    assert!(stdout.contains("@@ 2-3 requested=2:3"));
+    assert_eq!(stdout.matches("  2 | b").count(), 2);
+    assert_eq!(stdout.matches("  3 | c").count(), 2);
+}
+
+#[test]
+fn internal_slice_aliases_are_hidden_from_help() {
+    Command::cargo_bin("squire")
+        .unwrap()
+        .args(["lines", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("L10-L50").not())
+        .stdout(predicate::str::contains("10:50").not());
+}
+
+#[test]
 fn start_and_end_resolve_to_file_boundaries() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("sample.txt"), "first\nsecond\nthird").unwrap();

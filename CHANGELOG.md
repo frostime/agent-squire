@@ -4,6 +4,12 @@ All notable changes to `agent-squire` are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.5.1] — 2026-06-03
+
+### Changed
+
+- **`read-lines` command**: internally accepts common agent-generated slice variants `L10-L50` and `10:50` while keeping public help focused on the documented `10-50` form.
+
 ## [v0.5.0] — 2026-06-01
 
 ### Added
@@ -108,6 +114,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+[v0.5.1]: https://codeberg.org/frostime/agent-squire/compare/v0.5.0...v0.5.1
+[v0.5.0]: https://codeberg.org/frostime/agent-squire/compare/v0.4.1...v0.5.0
 [v0.4.1]: https://codeberg.org/frostime/agent-squire/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://codeberg.org/frostime/agent-squire/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://codeberg.org/frostime/agent-squire/compare/v0.2.2...v0.3.0

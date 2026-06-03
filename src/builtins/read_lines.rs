@@ -155,7 +155,7 @@ fn parse_slice(raw: &str) -> Result<SliceSpec> {
         return Ok(SliceSpec::Context(point, context));
     }
 
-    if let Some((start, end)) = raw.split_once('-') {
+    if let Some((start, end)) = raw.split_once(':').or_else(|| raw.split_once('-')) {
         let start = parse_point(start).with_context(|| format!("invalid slice: {raw}"))?;
         let end = parse_point(end).with_context(|| format!("invalid slice: {raw}"))?;
         return Ok(SliceSpec::Range(start, end));
@@ -167,6 +167,10 @@ fn parse_slice(raw: &str) -> Result<SliceSpec> {
 }
 
 fn parse_point(raw: &str) -> Result<Point> {
+    let raw = raw
+        .strip_prefix('L')
+        .or_else(|| raw.strip_prefix('l'))
+        .unwrap_or(raw);
     match raw {
         "start" => Ok(Point::Start),
         "end" => Ok(Point::End),
