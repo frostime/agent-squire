@@ -81,6 +81,13 @@ pub enum CliCommand {
     MdLinks(builtins::md_links::MdLinksArgs),
 
     #[command(
+        name = "md-backlinks",
+        alias = "mdbacklinks",
+        about = "Find Markdown backlinks to files"
+    )]
+    MdBacklinks(builtins::md_backlinks::MdBacklinksArgs),
+
+    #[command(
         name = "read-lines",
         alias = "lines",
         about = "Read known 1-based line slices from one text file"
@@ -157,6 +164,7 @@ fn try_main() -> Result<u8> {
         CliCommand::Info(args) => builtins::info::run(args, &ctx),
         CliCommand::Toc(args) => builtins::toc::run(args, &ctx),
         CliCommand::MdLinks(args) => builtins::md_links::run(args, &ctx),
+        CliCommand::MdBacklinks(args) => builtins::md_backlinks::run(args, &ctx),
         CliCommand::ReadLines(args) => builtins::read_lines::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
         CliCommand::ImgWeb(args) => builtins::imgweb::run(args, &ctx),

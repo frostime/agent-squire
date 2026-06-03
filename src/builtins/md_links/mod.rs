@@ -1,8 +1,9 @@
-mod model;
+pub(crate) mod graph;
+pub(crate) mod model;
 mod output;
-mod parse;
-mod resolve;
-mod sources;
+pub(crate) mod parse;
+pub(crate) mod resolve;
+pub(crate) mod sources;
 
 use std::path::PathBuf;
 
