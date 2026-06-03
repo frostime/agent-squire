@@ -4,12 +4,7 @@ use crate::runtime::output::{self, Envelope, PrintMode};
 
 use super::model::{MdLinksData, TargetType};
 
-pub fn print(
-    data: MdLinksData,
-    warnings: Vec<String>,
-    workspace: String,
-    mode: PrintMode,
-) -> Result<()> {
+pub fn print(data: MdLinksData, warnings: Vec<String>, cwd: String, mode: PrintMode) -> Result<()> {
     match mode {
         PrintMode::Json => {
             let payload = Envelope {
@@ -17,7 +12,7 @@ pub fn print(
                 command: "md-links",
                 data,
                 warnings,
-                meta: serde_json::json!({ "workspace": workspace }),
+                meta: serde_json::json!({ "cwd": cwd }),
             };
             output::print_json(&payload)?;
         }

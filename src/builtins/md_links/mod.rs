@@ -5,8 +5,6 @@ pub(crate) mod parse;
 pub(crate) mod resolve;
 pub(crate) mod sources;
 
-use std::path::PathBuf;
-
 use anyhow::Result;
 use clap::Args;
 
@@ -16,8 +14,8 @@ use self::model::{MdLinksData, MdLinksFile, TargetType};
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Extract Markdown link-like references and resolve file targets against a workspace.\n\nInputs may be Markdown files, directories, or glob patterns. Directories are searched recursively for .md files. JSON output is graph-ready; compact output groups dense records by source file.",
-    after_help = "Examples:\n  squire md-links README.md\n  squire md-links docs --workspace .\n  squire --print json md-links .sspec"
+    long_about = "Extract Markdown link-like references and resolve file targets against the effective current working directory.\n\nInputs may be Markdown files, directories, or glob patterns. Directories are searched recursively for .md files. JSON output is graph-ready; compact output groups dense records by source file.",
+    after_help = "Examples:\n  squire md-links README.md\n  squire --cwd . md-links docs\n  squire --print json md-links .sspec"
 )]
 pub struct MdLinksArgs {
     #[arg(
@@ -25,23 +23,16 @@ pub struct MdLinksArgs {
         help = "Markdown files, directories, or glob patterns"
     )]
     pub sources: Vec<String>,
-
-    #[arg(
-        long,
-        value_name = "DIR",
-        help = "Workspace base for workspace-relative file targets"
-    )]
-    pub workspace: Option<PathBuf>,
 }
 
 pub fn run(args: MdLinksArgs, ctx: &CommandContext) -> Result<u8> {
-    let workspace = args.workspace.unwrap_or_else(|| ctx.cwd.clone());
+    let root = ctx.cwd.clone();
     let sources = if args.sources.is_empty() {
         vec![".".to_string()]
     } else {
         args.sources
     };
-    let (source_files, missing) = sources::resolve_sources(&sources, &workspace)?;
+    let (source_files, missing) = sources::resolve_sources(&sources, &root)?;
 
     if source_files.is_empty() && !missing.is_empty() {
         anyhow::bail!("No Markdown files found for: {}", missing.join(", "));
@@ -49,7 +40,7 @@ pub fn run(args: MdLinksArgs, ctx: &CommandContext) -> Result<u8> {
 
     let files = source_files
         .iter()
-        .map(|source| analyze_file(source, &workspace))
+        .map(|source| analyze_file(source, &root))
         .collect::<Vec<_>>();
 
     let data = MdLinksData {
@@ -72,16 +63,15 @@ pub fn run(args: MdLinksArgs, ctx: &CommandContext) -> Result<u8> {
         .iter()
         .map(|source| format!("source not found: {source}"))
         .collect();
-    output::print(
-        data,
-        warnings,
-        sources::display_path(&workspace, &workspace),
-        ctx.print,
-    )?;
+    output::print(data, warnings, root_display(&root), ctx.print)?;
     Ok(0)
 }
 
-fn analyze_file(source: &model::SourceFile, workspace: &std::path::Path) -> MdLinksFile {
+fn root_display(root: &std::path::Path) -> String {
+    root.to_string_lossy().replace('\\', "/")
+}
+
+fn analyze_file(source: &model::SourceFile, root: &std::path::Path) -> MdLinksFile {
     let content = match std::fs::read_to_string(&source.path) {
         Ok(content) => content,
         Err(err) => {
@@ -95,7 +85,7 @@ fn analyze_file(source: &model::SourceFile, workspace: &std::path::Path) -> MdLi
 
     let links = parse::parse_links(&content)
         .into_iter()
-        .filter_map(|raw| resolve::resolve_link(raw, &source.path, workspace))
+        .filter_map(|raw| resolve::resolve_link(raw, &source.path, root))
         .collect();
 
     MdLinksFile {

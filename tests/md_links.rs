@@ -99,7 +99,7 @@ fn directory_and_glob_sources_discover_markdown_files() {
 }
 
 #[test]
-fn workspace_paths_are_supported_across_markdown_wiki_and_code_refs() {
+fn cwd_paths_are_supported_across_markdown_wiki_and_code_refs() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("notes/sub")).unwrap();
     fs::create_dir_all(dir.path().join("src")).unwrap();
@@ -116,12 +116,12 @@ fn workspace_paths_are_supported_across_markdown_wiki_and_code_refs() {
         .unwrap()
         .current_dir(dir.path().join("notes/sub"))
         .args([
+            "--cwd",
+            dir.path().to_str().unwrap(),
             "--print",
             "json",
             "md-links",
-            "page.md",
-            "--workspace",
-            dir.path().to_str().unwrap(),
+            "notes/sub/page.md",
         ])
         .assert()
         .success()
@@ -137,6 +137,22 @@ fn workspace_paths_are_supported_across_markdown_wiki_and_code_refs() {
     assert_eq!(links[1]["resolved"], "src/wiki.md");
     assert_eq!(links[2]["kind"], "code_span");
     assert_eq!(links[2]["resolved"], "src/main.rs");
+    assert!(
+        json["meta"]["cwd"]
+            .as_str()
+            .unwrap()
+            .ends_with(dir.path().file_name().unwrap().to_str().unwrap())
+    );
+}
+
+#[test]
+fn md_links_rejects_command_local_workspace() {
+    Command::cargo_bin("squire")
+        .unwrap()
+        .args(["md-links", "README.md", "--workspace", "."])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--workspace"));
 }
 
 #[test]
