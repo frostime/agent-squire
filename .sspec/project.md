@@ -35,6 +35,7 @@ Examples: "snake_case for Python, camelCase for JS", "All API routes: /api/v1/*"
 - Each builtin command = `src/builtins/<name>/mod.rs` vertical module
 - CLI names: `file-tree` / `file-info` / `md-toc` / `read-lines` / `patch-edit`; old names retained as aliases
 - Output unified via `runtime::output::Envelope<T>` JSON envelope
+- Agent-facing CLI output should be understandable and token-efficient; avoid repeating equivalent fields in compact output
 - Input unified via `@stdin` / `@file:path` / `@env:NAME` source syntax
 - Tests: unit tests in-module, integration tests in `tests/`
 - Changelog format: Keep a Changelog; version in `Cargo.toml`

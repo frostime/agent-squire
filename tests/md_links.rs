@@ -193,9 +193,15 @@ fn fenced_code_links_are_ignored_and_missing_files_are_reported() {
 }
 
 #[test]
-fn compact_output_groups_dense_records_by_file() {
+fn compact_output_groups_dense_agent_records_by_file() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join("README.md"), "[missing](missing.md)\n").unwrap();
+    fs::create_dir_all(dir.path().join("docs")).unwrap();
+    fs::write(dir.path().join("docs/intro.md"), "# Intro\n").unwrap();
+    fs::write(
+        dir.path().join("README.md"),
+        "[intro](docs/intro.md#install)\n[missing](missing.md)\n",
+    )
+    .unwrap();
 
     Command::cargo_bin("squire")
         .unwrap()
@@ -204,10 +210,15 @@ fn compact_output_groups_dense_records_by_file() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "# files=1 links=1 file=1 exists=0",
+            "# files=1 links=2 file_links=2 existing_file_links=1 missing_file_links=1",
         ))
-        .stdout(predicate::str::contains("@ README.md"))
         .stdout(predicate::str::contains(
-            "L1|markdown|file|missing|\"missing.md\"|\"missing.md\"",
+            "@ README.md links=2 file_links=2 missing_file_links=1",
+        ))
+        .stdout(predicate::str::contains(
+            "L1|ok|markdown|file|\"docs/intro.md#install\"=>\"docs/intro.md\"",
+        ))
+        .stdout(predicate::str::contains(
+            "L2|missing|markdown|file|\"missing.md\"",
         ));
 }

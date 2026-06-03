@@ -21,57 +21,88 @@ pub fn print(
             };
             output::print_json(&payload)?;
         }
-        _ => print_compact(&data),
+        _ => print_compact(&data, &warnings),
     }
     Ok(())
 }
 
-fn print_compact(data: &MdLinksData) {
+fn print_compact(data: &MdLinksData, warnings: &[String]) {
     println!(
-        "Statistic: files={} links={} file={} exists={}",
-        data.count, data.total_links, data.total_file_links, data.total_existing_file_links
+        "# files={} links={} file_links={} existing_file_links={} missing_file_links={}",
+        data.count,
+        data.total_links,
+        data.total_file_links,
+        data.total_existing_file_links,
+        data.total_file_links - data.total_existing_file_links
     );
 
+    for warning in warnings {
+        println!("! {warning}");
+    }
+
     for file in &data.files {
-        println!("\n=== Source File {} ===", file.path);
+        let file_links = file
+            .links
+            .iter()
+            .filter(|link| link.target_type == TargetType::File)
+            .count();
+        let existing_file_links = file
+            .links
+            .iter()
+            .filter(|link| link.target_type == TargetType::File && link.exists == Some(true))
+            .count();
+        println!(
+            "@ {} links={} file_links={} missing_file_links={}",
+            file.path,
+            file.links.len(),
+            file_links,
+            file_links - existing_file_links
+        );
+
         if let Some(error) = &file.error {
-            println!("!{}", json_string(error));
+            println!("! file_error={}", json_string(error));
             continue;
         }
-        println!("Line(1-based)|ref-kink|target-type|exist|ref-text|resolved");
-        if file.links.len() == 0 {
-            println!("(No references)")
-        }
+
         for link in &file.links {
-            let status = match link.target_type {
-                TargetType::File => {
-                    if link.exists == Some(true) {
-                        "ok"
-                    } else {
-                        "missing"
-                    }
-                }
-                _ => "-",
-            };
-            let mut line = format!(
+            println!(
                 "L{}|{}|{}|{}|{}",
                 link.line_num,
+                status_name(&link.target_type, link.exists),
                 kind_name(&link.kind),
                 target_type_name(&link.target_type),
-                status,
-                json_string(&link.raw)
+                target_display(&link.raw, link.resolved.as_deref())
             );
-            if let Some(resolved) = &link.resolved {
-                line.push('|');
-                line.push_str(&json_string(resolved));
-            }
-            println!("{line}");
         }
     }
 }
 
 fn json_string(value: &str) -> String {
     serde_json::to_string(value).expect("string serialization cannot fail")
+}
+
+fn status_name(target_type: &TargetType, exists: Option<bool>) -> &'static str {
+    match target_type {
+        TargetType::File => {
+            if exists == Some(true) {
+                "ok"
+            } else {
+                "missing"
+            }
+        }
+        TargetType::Url => "url",
+        TargetType::SiyuanBlock => "siyuan_block",
+        TargetType::Unknown => "unknown",
+    }
+}
+
+fn target_display(raw: &str, resolved: Option<&str>) -> String {
+    match resolved {
+        Some(resolved) if resolved != raw => {
+            format!("{}=>{}", json_string(raw), json_string(resolved))
+        }
+        _ => json_string(raw),
+    }
 }
 
 fn kind_name(kind: &super::model::LinkKind) -> &'static str {

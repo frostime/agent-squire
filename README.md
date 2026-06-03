@@ -118,10 +118,10 @@ File targets are resolved against the source file and workspace. Existing files 
 Compact output groups by source file:
 
 ```text
-# files=1 links=2 file=1 exists=1
-@ README.md
-L12|markdown|file|ok|"docs/intro.md#install"|"docs/intro.md"
-L18|markdown|url|-|"https://example.com"
+# files=1 links=2 file_links=1 existing_file_links=1 missing_file_links=0
+@ README.md links=2 file_links=1 missing_file_links=0
+L12|ok|markdown|file|"docs/intro.md#install"=>"docs/intro.md"
+L18|url|markdown|url|"https://example.com"
 ```
 
 JSON output uses the standard envelope and is intended for graph consumers.
