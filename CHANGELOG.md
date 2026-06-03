@@ -4,6 +4,21 @@ All notable changes to `agent-squire` are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.0] — 2026-06-03
+
+### Added
+
+- **`md-backlinks` command** — finds Markdown files that link to one or more focus pages.
+  - Reuses the `md-links` parser/resolver so backlinks are based on resolved Markdown links, wiki links, and code path refs rather than raw text search.
+  - Supports `--from` corpus selection, `.gitignore`-aware directory scans, compact output, and JSON output.
+
+### Changed
+
+- **BREAKING**: `md-links` no longer accepts command-local `--workspace`; use global `--cwd <root>` before the subcommand instead.
+- **BREAKING**: `md-links` JSON metadata now reports `meta.cwd` instead of `meta.workspace`.
+- `md-links` and `md-backlinks` now share the same effective-CWD path-root model for agent-facing usage.
+- Fixed repository clippy baseline so `cargo clippy --all-targets --all-features -- -D warnings` passes.
+
 ## [v0.5.1] — 2026-06-03
 
 ### Changed
@@ -114,6 +129,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+[v0.6.0]: https://github.com/frostime/agent-squire/compare/v0.5.1...v0.6.0
 [v0.5.1]: https://github.com/frostime/agent-squire/compare/v0.5.0...v0.5.1
 [v0.5.0]: https://github.com/frostime/agent-squire/compare/v0.4.1...v0.5.0
 [v0.4.1]: https://github.com/frostime/agent-squire/compare/v0.4.0...v0.4.1
