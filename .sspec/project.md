@@ -5,7 +5,7 @@ Read it first every session. Update Conventions + Notes via @memory. -->
 
 **Name**: agent-squire
 **Description**: A local CLI toolbox for humans and agents.
-**Repo**: https://codeberg.org/frostime/agent-squire
+**Repo**: https://github.com/frostime/agent-squire
 
 ## Tech Stack
 - Rust 2024 edition, clap 4 (derive), serde/toml, axum+tokio, encoding_rs, tempfile
@@ -23,7 +23,7 @@ Agent uses this to orient in the codebase. -->
 | `src/runtime/output.rs` | Output mode (`PrintMode`, `Envelope<T>` JSON envelope) |
 | `src/external.rs` | External command mapping (TOML config parse + execution) |
 | `.agent-squire.example.toml` | External command mapping config example |
-| `CHANGELOG.md` | Version history, currently at v0.4.1 |
+| `CHANGELOG.md` | Version history, currently at v0.5.1 |
 
 ## Conventions
 <!-- MUST be one-liners. Coding rules that apply across ALL work in this project.
@@ -39,6 +39,8 @@ Examples: "snake_case for Python, camelCase for JS", "All API routes: /api/v1/*"
 - Input unified via `@stdin` / `@file:path` / `@env:NAME` source syntax
 - Tests: unit tests in-module, integration tests in `tests/`
 - Changelog format: Keep a Changelog; version in `Cargo.toml`
+- GitHub `origin` is the primary repository; Codeberg `codeberg` is the secondary mirror
+- Release tags should exist on both GitHub and Codeberg
 
 ## Spec-Docs Index
 <!-- Quick reference to spec-docs in `.sspec/spec-docs/`.
