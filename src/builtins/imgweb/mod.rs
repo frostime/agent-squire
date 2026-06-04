@@ -262,7 +262,8 @@ async fn upload_image(
     inner.next_order += 1;
     let order = inner.next_order;
     let slug = sanitize_slug(slug.as_deref()).unwrap_or_else(|| format!("image-{order}"));
-    let filename = format!("{order:03}-{slug}-{id}.{ext}");
+    let filename_slug = slug_to_filename(&slug);
+    let filename = format!("{order:03}-{filename_slug}-{id}.{ext}");
     let path = app.images_dir.join(&filename);
     if let Err(err) = fs::write(&path, &bytes) {
         return error(
@@ -464,33 +465,36 @@ fn render_prompt(images: &[ImageItem]) -> String {
     out
 }
 
+/// Slug stored in memory: allow Unicode letters/digits + common punctuation,
+/// strip only filesystem-dangerous characters (/ \ NUL : * ? " < > |).
 fn sanitize_slug(raw: Option<&str>) -> Option<String> {
     let raw = raw?.trim();
     if raw.is_empty() {
         return None;
     }
-    let mut slug = String::new();
+    let slug: String = raw
+        .chars()
+        .filter(|c| !matches!(c, '/' | '\\' | '\0' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .collect();
+    let slug = slug.trim().to_string();
+    if slug.is_empty() { None } else { Some(slug) }
+}
+
+/// Safe ASCII filename component derived from slug (used only in filenames).
+fn slug_to_filename(slug: &str) -> String {
+    let mut out = String::new();
     let mut last_dash = false;
-    for ch in raw.chars() {
-        let c = if ch.is_ascii_alphanumeric() {
-            ch.to_ascii_lowercase()
-        } else {
-            '-'
-        };
-        if c == '-' {
-            if !last_dash && !slug.is_empty() {
-                slug.push(c);
-                last_dash = true;
-            }
-        } else {
-            slug.push(c);
+    for ch in slug.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
             last_dash = false;
+        } else if !last_dash && !out.is_empty() {
+            out.push('-');
+            last_dash = true;
         }
     }
-    while slug.ends_with('-') {
-        slug.pop();
-    }
-    if slug.is_empty() { None } else { Some(slug) }
+    while out.ends_with('-') { out.pop(); }
+    if out.is_empty() { "img".to_string() } else { out }
 }
 
 fn extension_from(content_type: Option<&str>, filename: Option<&str>) -> String {

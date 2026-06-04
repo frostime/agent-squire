@@ -22,18 +22,28 @@
     button:hover { border-color:var(--accent); }
     button.danger:hover { border-color:var(--danger); color:var(--danger); }
     button.primary { background:#244a86; border-color:#3568b5; }
+    button:disabled { opacity:.4; cursor:default; }
     .grid { display:grid; gap:12px; }
     .item { display:grid; grid-template-columns:160px 1fr auto; gap:14px; align-items:start; }
-    .thumb { width:160px; height:110px; object-fit:contain; background:#0b0d12; border:1px solid var(--line); border-radius:10px; }
+    .thumb-wrap { position:relative; width:160px; height:110px; cursor:zoom-in; }
+    .thumb { width:160px; height:110px; object-fit:contain; background:#0b0d12; border:1px solid var(--line); border-radius:10px; display:block; }
+    .thumb-wrap:hover::after { content:'🔍'; position:absolute; bottom:6px; right:8px; font-size:18px; }
     label { display:block; color:var(--muted); font-size:12px; margin-bottom:4px; }
     input[type="text"], textarea { width:100%; border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:#0f131b; color:var(--text); font:inherit; }
+    input[type="text"]:focus, textarea:focus { outline:none; border-color:var(--accent); }
     textarea { min-height:66px; resize:vertical; }
     .fields { display:grid; gap:10px; }
     .actions { display:flex; flex-direction:column; gap:8px; }
     pre { white-space:pre-wrap; word-break:break-word; background:#0b0d12; border:1px solid var(--line); border-radius:12px; padding:14px; min-height:100px; }
     .status { min-height:22px; color:var(--muted); }
     .empty { padding:24px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:12px; }
-    @media (max-width:760px) { main { padding:14px; } header,.item { display:block; } .thumb { width:100%; height:180px; margin-bottom:10px; } .actions { flex-direction:row; flex-wrap:wrap; margin-top:10px; } }
+
+    /* Lightbox */
+    #lightbox { display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:1000; align-items:center; justify-content:center; cursor:zoom-out; }
+    #lightbox.open { display:flex; }
+    #lightbox img { max-width:90vw; max-height:90vh; object-fit:contain; border-radius:10px; box-shadow:0 8px 40px #000; }
+
+    @media (max-width:760px) { main { padding:14px; } header,.item { display:block; } .thumb-wrap,.thumb { width:100%; height:180px; margin-bottom:10px; } .actions { flex-direction:row; flex-wrap:wrap; margin-top:10px; } }
   </style>
 </head>
 <body>
@@ -54,8 +64,6 @@
 
   <div class="toolbar">
     <button class="primary" id="copyPrompt">Copy Prompt</button>
-    <button id="refreshPrompt">Refresh Prompt</button>
-    <button class="danger" id="clearAll">Clear</button>
     <span class="status" id="status"></span>
   </div>
 
@@ -65,6 +73,9 @@
   <pre id="prompt"></pre>
 </main>
 
+<!-- Lightbox -->
+<div id="lightbox"><img id="lightboxImg" src="" alt="" /></div>
+
 <script>
 const token = new URLSearchParams(location.search).get('token') || '';
 const api = path => `/api/v1/img${path}`;
@@ -73,7 +84,12 @@ const headers = () => ({ 'X-Squire-Token': token });
 let images = [];
 
 const $ = id => document.getElementById(id);
-const status = msg => { $('status').textContent = msg; if (msg) setTimeout(() => $('status').textContent = '', 3000); };
+let statusTimer;
+const status = msg => {
+  $('status').textContent = msg;
+  clearTimeout(statusTimer);
+  if (msg) statusTimer = setTimeout(() => $('status').textContent = '', 3000);
+};
 
 async function request(path, options = {}) {
   const res = await fetch(api(path), { ...options, headers: { ...headers(), ...(options.headers || {}) } });
@@ -100,20 +116,71 @@ function renderImages() {
   images.forEach((img, index) => {
     const el = document.createElement('article');
     el.className = 'panel item';
+    el.dataset.id = img.id;
     el.innerHTML = `
-      <img class="thumb" src="${fileUrl(img.preview_url)}" alt="${escapeHtml(img.slug)}">
+      <div class="thumb-wrap">
+        <img class="thumb" src="${fileUrl(img.preview_url)}" alt="${escapeAttr(img.slug)}">
+      </div>
       <div class="fields">
-        <div><label>Slug</label><input type="text" value="${escapeAttr(img.slug)}" data-field="slug"></div>
+        <div><label>Slug</label><input type="text" value="${escapeAttr(img.slug)}" data-field="slug" data-orig="${escapeAttr(img.slug)}"></div>
         <div><label>Hint</label><textarea data-field="hint">${escapeHtml(img.hint || '')}</textarea></div>
-        <div class="muted">${escapeHtml(img.path)}</div>
+        <div class="muted" style="font-size:11px">${escapeHtml(img.path)}</div>
       </div>
       <div class="actions">
         <button data-action="up" ${index === 0 ? 'disabled' : ''}>↑</button>
         <button data-action="down" ${index === images.length - 1 ? 'disabled' : ''}>↓</button>
-        <button class="danger" data-action="delete">Delete</button>
+        <button class="danger" data-action="delete">Del</button>
       </div>`;
-    el.querySelector('[data-field="slug"]').addEventListener('change', e => updateImage(img.id, { slug: e.target.value }));
-    el.querySelector('[data-field="hint"]').addEventListener('change', e => updateImage(img.id, { hint: e.target.value }));
+
+    // Lightbox
+    el.querySelector('.thumb-wrap').addEventListener('click', () => openLightbox(fileUrl(img.preview_url)));
+
+    // Slug: save on blur or Enter
+    const slugInput = el.querySelector('[data-field="slug"]');
+    slugInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); slugInput.blur(); } });
+    slugInput.addEventListener('blur', async () => {
+      const val = slugInput.value.trim();
+      if (val === slugInput.dataset.orig) return;
+      try {
+        const updated = await request(`/images/${img.id}`, {
+          method: 'PATCH',
+          headers: { ...headers(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug: val }),
+        });
+        // Update local state without re-rendering
+        const item = images.find(x => x.id === img.id);
+        if (item) item.slug = updated.slug;
+        slugInput.value = updated.slug;
+        slugInput.dataset.orig = updated.slug;
+        status('Saved');
+        await refreshPrompt();
+      } catch (err) {
+        status('Error: ' + err.message);
+        slugInput.value = slugInput.dataset.orig; // revert
+      }
+    });
+
+    // Hint: save on blur
+    const hintArea = el.querySelector('[data-field="hint"]');
+    hintArea.addEventListener('blur', async () => {
+      const val = hintArea.value;
+      if (val === (img.hint || '')) return;
+      try {
+        const updated = await request(`/images/${img.id}`, {
+          method: 'PATCH',
+          headers: { ...headers(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hint: val }),
+        });
+        const item = images.find(x => x.id === img.id);
+        if (item) item.hint = updated.hint;
+        hintArea.dataset.orig = updated.hint;
+        status('Saved');
+        await refreshPrompt();
+      } catch (err) {
+        status('Error: ' + err.message);
+      }
+    });
+
     el.querySelector('[data-action="up"]').addEventListener('click', () => move(index, -1));
     el.querySelector('[data-action="down"]').addEventListener('click', () => move(index, 1));
     el.querySelector('[data-action="delete"]').addEventListener('click', () => deleteImage(img.id));
@@ -121,27 +188,42 @@ function renderImages() {
   });
 }
 
+// Lightbox
+function openLightbox(src) {
+  $('lightboxImg').src = src;
+  $('lightbox').classList.add('open');
+}
+$('lightbox').addEventListener('click', () => $('lightbox').classList.remove('open'));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('lightbox').classList.remove('open'); });
+
 async function uploadFiles(files, source) {
+  // Flush any pending blur-save before reloading DOM
+  if (document.activeElement && document.activeElement !== document.body) {
+    document.activeElement.blur();
+    await new Promise(r => setTimeout(r, 50));
+  }
+  const newIds = [];
   for (const file of files) {
     if (!file.type.startsWith('image/')) continue;
     const form = new FormData();
     form.append('file', file, file.name || 'image.png');
     form.append('source', source);
-    await fetch(api('/images'), { method:'POST', headers:headers(), body:form })
-      .then(async res => { const json = await res.json(); if (!res.ok) throw new Error(json.error || res.statusText); });
+    const res = await fetch(api('/images'), { method: 'POST', headers: headers(), body: form });
+    const json = await res.json();
+    if (!res.ok) { status(json.error || res.statusText); continue; }
+    newIds.push(json.data.id);
   }
-  status('Uploaded');
+  if (!newIds.length) return;
   await load();
-}
-
-async function updateImage(id, body) {
-  await request(`/images/${id}`, { method:'PATCH', headers:{ ...headers(), 'Content-Type':'application/json' }, body:JSON.stringify(body) });
-  status('Updated');
-  await load();
+  // Focus slug of last uploaded image
+  const last = newIds[newIds.length - 1];
+  const el = document.querySelector(`[data-id="${last}"] [data-field="slug"]`);
+  if (el) { el.focus(); el.select(); }
 }
 
 async function deleteImage(id) {
-  images = await request(`/images/${id}`, { method:'DELETE' });
+  if (!confirm('Delete this image?')) return;
+  images = await request(`/images/${id}`, { method: 'DELETE' });
   renderImages();
   await refreshPrompt();
 }
@@ -150,7 +232,11 @@ async function move(index, delta) {
   const copy = images.slice();
   const [item] = copy.splice(index, 1);
   copy.splice(index + delta, 0, item);
-  images = await request('/images/reorder', { method:'POST', headers:{ ...headers(), 'Content-Type':'application/json' }, body:JSON.stringify({ ids:copy.map(x => x.id) }) });
+  images = await request('/images/reorder', {
+    method: 'POST',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: copy.map(x => x.id) }),
+  });
   renderImages();
   await refreshPrompt();
 }
@@ -165,26 +251,26 @@ $('copyPrompt').addEventListener('click', async () => {
   await navigator.clipboard.writeText($('prompt').textContent);
   status('Prompt copied');
 });
-$('refreshPrompt').addEventListener('click', refreshPrompt);
-$('clearAll').addEventListener('click', async () => {
-  if (!confirm('Clear all images in this session?')) return;
-  images = await request('/clear', { method:'POST' });
-  renderImages();
-  await refreshPrompt();
-});
+
 
 const drop = $('dropzone');
 drop.addEventListener('click', () => $('fileInput').click());
-$('fileInput').addEventListener('change', e => uploadFiles(e.target.files, 'picker'));
+$('fileInput').addEventListener('change', e => { uploadFiles(e.target.files, 'picker'); e.target.value = ''; });
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); uploadFiles(e.dataTransfer.files, 'drag'); });
 document.addEventListener('paste', e => {
-  const files = [...(e.clipboardData?.files || [])];
-  if (files.length) uploadFiles(files, 'paste');
+  // Support both files (drag copy) and items (screenshot paste)
+  const fromFiles = [...(e.clipboardData?.files || [])].filter(f => f.type.startsWith('image/'));
+  if (fromFiles.length) { uploadFiles(fromFiles, 'paste'); return; }
+  const fromItems = [...(e.clipboardData?.items || [])]
+    .filter(i => i.type.startsWith('image/'))
+    .map(i => i.getAsFile())
+    .filter(Boolean);
+  if (fromItems.length) uploadFiles(fromItems, 'paste');
 });
 
-function escapeHtml(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function escapeHtml(s) { return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
 
 load().catch(err => status(err.message));
