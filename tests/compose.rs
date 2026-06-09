@@ -85,6 +85,21 @@ fn compose_cli_json_status_does_not_embed_rendered_body() {
 }
 
 #[test]
+fn compose_cli_check_catches_compile_conflicts_without_execute() {
+    Command::cargo_bin("squire")
+        .unwrap()
+        .args([
+            "compose",
+            "--template",
+            "${{exec: definitely-not-a-real-command |> stdout |> stderr}}",
+            "--check",
+        ])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("conflicting_stream_selectors"));
+}
+
+#[test]
 fn compose_cli_check_and_list_sources_do_not_execute() {
     Command::cargo_bin("squire")
         .unwrap()

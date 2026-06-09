@@ -3,16 +3,10 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use super::model::{ComposeError, ComposeResult, FailureCase, RenderOptions, ShellMode};
+use super::model::{
+    ComposeError, ComposeResult, FailureCase, RenderOptions, ShellMode, SourceSpec,
+};
 use super::text::{decode_text, limit_bytes};
-
-#[derive(Debug, Clone)]
-pub enum SourceSpec {
-    Stdin,
-    File(String),
-    Env(String),
-    Exec(String),
-}
 
 #[derive(Debug, Clone)]
 pub enum ResolvedSource {

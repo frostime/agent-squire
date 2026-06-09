@@ -1,6 +1,6 @@
 # Memory: compose
 
-**Updated**: 2026-06-10T02:10+08:00
+**Updated**: 2026-06-10T02:52+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -22,7 +22,7 @@ A  .sspec/requests/26-06-10T00-36_composer.md
 <!-- Where we are and what's next — one to three lines.
 This is the resume entry point; the first section an agent reads on cold start. -->
 
-Implementation is complete and the change is in REVIEW. Targeted compose validation and clippy pass; full `cargo test` and `cargo fmt --check` are blocked by unrelated existing failures recorded in tasks.md.
+Revision 001 is complete and the change is back in REVIEW. `compile.rs` now owns static semantic analysis; `render.rs` owns render/eval flow.
 
 ## Key Files
 <!-- Files critical to understanding/continuing this change.
@@ -75,3 +75,5 @@ CLI treats the last valid bullet as the latest milestone.
 - [2026-06-10T01:33+08:00] Added `--prompt` to the compose design.
 - [2026-06-10T01:46+08:00] Drafted file-level implementation plan across six phases.
 - [2026-06-10T02:10+08:00] Completed implementation and moved change to REVIEW.
+- [2026-06-10T02:36+08:00] Created revision 001 for compile/render phase separation.
+- [2026-06-10T02:52+08:00] Completed revision 001 refactor and returned change to REVIEW.

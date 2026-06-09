@@ -8,6 +8,25 @@ pub struct Template {
 }
 
 #[derive(Debug, Clone)]
+pub struct CompiledTemplate {
+    pub segments: Vec<CompiledSegment>,
+    pub sources: Vec<SourceInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub enum CompiledSegment {
+    Literal(String),
+    Interpolation(CompiledInterpolation),
+}
+
+#[derive(Debug, Clone)]
+pub struct CompiledInterpolation {
+    pub raw: String,
+    pub location: Location,
+    pub expression: NormalizedExpression,
+}
+
+#[derive(Debug, Clone)]
 pub enum Segment {
     Literal(String),
     Interpolation(Interpolation),
@@ -123,6 +142,16 @@ impl ComposeError {
         }
         self
     }
+
+    pub fn with_compiled_interpolation(mut self, interpolation: &CompiledInterpolation) -> Self {
+        if self.raw.is_none() {
+            self.raw = Some(interpolation.raw.clone());
+        }
+        if self.location.is_none() {
+            self.location = Some(interpolation.location.clone());
+        }
+        self
+    }
 }
 
 impl std::fmt::Display for ComposeError {
@@ -134,6 +163,73 @@ impl std::fmt::Display for ComposeError {
 impl std::error::Error for ComposeError {}
 
 pub type ComposeResult<T> = Result<T, ComposeError>;
+
+#[derive(Debug, Clone)]
+pub enum SourceSpec {
+    Stdin,
+    File(String),
+    Env(String),
+    Exec(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamSelector {
+    Stdout,
+    Stderr,
+}
+
+#[derive(Debug, Clone)]
+pub enum Transform {
+    Lines(RangeSpec),
+    Slice(RangeSpec),
+    Head(usize),
+    HeadChar(usize),
+    Tail(usize),
+    TailChar(usize),
+    Trim,
+    Oneline,
+    Indent(usize),
+    MaxLines(usize),
+    MaxBytes(usize),
+}
+
+#[derive(Debug, Clone)]
+pub struct RangeSpec {
+    pub start: RangePoint,
+    pub end: RangePoint,
+}
+
+#[derive(Debug, Clone)]
+pub enum RangePoint {
+    Beg,
+    End,
+    Number(usize),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FailurePolicies {
+    pub fallback: Option<String>,
+    pub cases: std::collections::BTreeMap<&'static str, String>,
+}
+
+impl FailurePolicies {
+    pub fn recover(&self, error: &ComposeError) -> Option<String> {
+        let case = error.case?;
+        self.cases
+            .get(case.as_str())
+            .cloned()
+            .or_else(|| self.fallback.clone())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NormalizedExpression {
+    pub source: SourceSpec,
+    pub timeout: Option<u64>,
+    pub stream: Option<StreamSelector>,
+    pub transforms: Vec<Transform>,
+    pub policies: FailurePolicies,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum ShellMode {

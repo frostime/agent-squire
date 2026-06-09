@@ -72,12 +72,7 @@ pub fn parse_expression(input: &str) -> ComposeResult<Vec<CommandNode>> {
             "Empty interpolation expression",
         ));
     }
-    let commands = parts
-        .into_iter()
-        .map(parse_command)
-        .collect::<ComposeResult<Vec<_>>>()?;
-    validate_command_roles(&commands)?;
-    Ok(commands)
+    parts.into_iter().map(parse_command).collect()
 }
 
 fn parse_command(input: &str) -> ComposeResult<CommandNode> {
@@ -269,93 +264,6 @@ fn validate_name(name: &str) -> ComposeResult<()> {
         return Err(ComposeError::parse(
             "invalid_command_name",
             format!("Invalid command name: {name}"),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_command_roles(commands: &[CommandNode]) -> ComposeResult<()> {
-    for (index, command) in commands.iter().enumerate() {
-        let is_source = matches!(command.name.as_str(), "stdin" | "file" | "env" | "exec");
-        if index == 0 && !is_source {
-            return Err(ComposeError::parse(
-                "first_command_must_be_source",
-                "First command in an interpolation must be a source",
-            ));
-        }
-        if index > 0 && is_source {
-            return Err(ComposeError::parse(
-                "source_after_first",
-                format!("Source command {} may only appear first", command.name),
-            ));
-        }
-        validate_known_command(command)?;
-    }
-    Ok(())
-}
-
-fn validate_known_command(command: &CommandNode) -> ComposeResult<()> {
-    let name = command.name.as_str();
-    let known = matches!(
-        name,
-        "stdin"
-            | "file"
-            | "env"
-            | "exec"
-            | "timeout"
-            | "stdout"
-            | "stderr"
-            | "lines"
-            | "slice"
-            | "head"
-            | "head-char"
-            | "tail"
-            | "tail-char"
-            | "trim"
-            | "oneline"
-            | "indent"
-            | "max-lines"
-            | "max-bytes"
-            | "fallback"
-            | "on-404"
-            | "on-error"
-            | "on-timeout"
-            | "on-range"
-            | "on-binary"
-            | "on-encoding"
-            | "on-limit"
-            | "on-modifier"
-    );
-    if !known {
-        return Err(ComposeError::parse(
-            "unknown_command",
-            format!("Unknown command: {name}"),
-        ));
-    }
-
-    let no_arg = matches!(name, "stdin" | "stdout" | "stderr" | "trim" | "oneline");
-    if no_arg {
-        if let Some(body) = &command.body
-            && !body.value.is_empty()
-        {
-            return Err(ComposeError::parse(
-                "unexpected_body",
-                format!("Command {name} does not accept a body"),
-            ));
-        }
-        return Ok(());
-    }
-
-    let Some(body) = &command.body else {
-        return Err(ComposeError::parse(
-            "missing_body",
-            format!("Command {name} requires a body"),
-        ));
-    };
-    if body.value.is_empty() && !body.quoted {
-        return Err(ComposeError::parse(
-            "missing_body",
-            format!("Command {name} requires a body"),
         ));
     }
     Ok(())

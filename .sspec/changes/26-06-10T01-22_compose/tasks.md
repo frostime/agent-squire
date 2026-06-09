@@ -18,7 +18,13 @@ Phase emoji: ⏳ pending | 🚧 in progress | ✅ done
 - [ ] Task description `path/file.py`
 **Verification**: <how to verify this phase>
 
-### Feedback Tasks (→ [NNN-description](./revisions/NNN-description.md))
+### Feedback Tasks (→ [001-separate-compile-render-phases](./revisions/001-separate-compile-render-phases.md)) ✅
+- [x] Add `src/builtins/compose/compile.rs` for static semantic analysis and compiled source listing.
+- [x] Add `src/builtins/compose/render.rs` and move render/eval flow out of `src/builtins/compose/mod.rs`.
+- [x] Move normalization types/functions out of `src/builtins/compose/modifiers.rs` where they are compile-stage concerns.
+- [x] Update compose tests so `--check` catches compile-time conflicts without source evaluation.
+- [x] Re-run targeted validation and update REVIEW state.
+
 Use this section for review/feedback tasks that still belong to the current change.
 
 If accepted feedback changes scope/design:
@@ -79,8 +85,11 @@ If the work belongs in a new follow-up or replacement change, the agent MUST NOT
 | Phase 4 | 3/3 | ✅ |
 | Phase 5 | 3/3 | ✅ |
 | Phase 6 | 3/3 | ✅ |
+| Feedback 001 | 5/5 | ✅ |
 
 **Recent**:
 - [2026-06-10T01:46+08:00] Planned implementation phases from confirmed design.
 - [2026-06-10T01:48+08:00] Started Phase 1 implementation.
 - [2026-06-10T02:05+08:00] Completed compose implementation and targeted validation; recorded unrelated baseline failures.
+- [2026-06-10T02:36+08:00] Started revision 001 to separate parse/compile/render phases.
+- [2026-06-10T02:52+08:00] Completed revision 001 refactor and targeted validation.

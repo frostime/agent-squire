@@ -1,28 +1,26 @@
+mod compile;
 mod model;
 mod modifiers;
 mod output;
 mod parser;
+mod render;
 mod sources;
 mod text;
-
-use std::fs;
-use std::path::PathBuf;
-use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde::Serialize;
+use std::fs;
+use std::path::PathBuf;
 
 use crate::cli::CommandContext;
 use crate::runtime::output::{self as runtime_output, Envelope, PrintMode};
 
-use model::{
-    ComposeError, ComposeResult, ComposeStatus, FailureCase, RenderOptions, ShellMode, SourceInfo,
-};
-use modifiers::{apply_global_limits, normalize, select_and_transform};
+use compile::compile_template;
+use model::{ComposeError, ComposeStatus, FailureCase, RenderOptions, ShellMode, SourceInfo};
 use output::{print_check_ok, print_error, print_success, resolve_target, write_rendered};
 use parser::parse_template;
-use sources::{SourceCache, resolve_source};
+use render::render_program;
 use text::decode_text;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 30;
@@ -188,25 +186,31 @@ pub fn run(args: ComposeArgs, ctx: &CommandContext) -> Result<u8> {
             return Ok(exit_code_for(&error));
         }
     };
-    let sources = collect_sources(&template);
+    let program = match compile_template(&template) {
+        Ok(program) => program,
+        Err(error) => {
+            print_error(&error, ctx.print)?;
+            return Ok(exit_code_for(&error));
+        }
+    };
 
     if args.check {
-        print_check_ok(ctx.print, sources.len())?;
+        print_check_ok(ctx.print, program.sources.len())?;
         return Ok(0);
     }
 
     if args.list_sources {
-        print_sources(&sources, ctx.print)?;
+        print_sources(&program.sources, ctx.print)?;
         return Ok(0);
     }
 
-    match render(&template, &options) {
+    match render_program(&program, &options) {
         Ok(rendered) => {
             let output_info = write_rendered(&target, &rendered.text, args.overwrite)?;
             let status = ComposeStatus {
                 output: output_info,
                 bytes: rendered.text.len(),
-                sources: sources.len(),
+                sources: program.sources.len(),
                 truncated: rendered.truncated,
             };
             print_success(&status, ctx.print)?;
@@ -226,98 +230,6 @@ fn load_template(args: &ComposeArgs) -> Result<String> {
         return decode_text(&bytes, &path.display().to_string()).map_err(anyhow::Error::from);
     }
     Ok(args.template.clone().expect("validated template source"))
-}
-
-struct Rendered {
-    text: String,
-    truncated: bool,
-}
-
-fn render(template: &model::Template, options: &RenderOptions) -> ComposeResult<Rendered> {
-    let started = Instant::now();
-    let mut cache = SourceCache::default();
-    let mut out = String::new();
-    let mut any_truncated = false;
-
-    for segment in &template.segments {
-        match segment {
-            model::Segment::Literal(text) => out.push_str(text),
-            model::Segment::Interpolation(interpolation) => {
-                if let Some(total_timeout) = options.total_timeout_seconds
-                    && started.elapsed().as_secs() > total_timeout
-                {
-                    return Err(ComposeError::new(
-                        "total_timeout",
-                        Some(FailureCase::Timeout),
-                        format!("Render timed out after {total_timeout} seconds"),
-                    )
-                    .with_interpolation(interpolation));
-                }
-
-                let expression = normalize(&interpolation.commands)
-                    .map_err(|err| err.with_interpolation(interpolation))?;
-                let rendered = resolve_and_transform(&expression, options, &mut cache)
-                    .or_else(|err| {
-                        expression
-                            .policies
-                            .recover(&err)
-                            .map(|text| modifiers::TransformResult {
-                                text,
-                                truncated: false,
-                            })
-                            .ok_or(err)
-                    })
-                    .map_err(|err| err.with_interpolation(interpolation))?;
-                any_truncated |= rendered.truncated;
-                out.push_str(&rendered.text);
-            }
-        }
-    }
-
-    Ok(Rendered {
-        text: out,
-        truncated: any_truncated,
-    })
-}
-
-fn resolve_and_transform(
-    expression: &modifiers::NormalizedExpression,
-    options: &RenderOptions,
-    cache: &mut SourceCache,
-) -> ComposeResult<modifiers::TransformResult> {
-    let source = resolve_source(&expression.source, options, cache, expression.timeout)?;
-    let transformed = select_and_transform(source, expression, options.fail_on_truncated)?;
-    apply_global_limits(
-        transformed,
-        options.max_lines,
-        options.max_bytes,
-        options.fail_on_truncated,
-    )
-}
-
-fn collect_sources(template: &model::Template) -> Vec<SourceInfo> {
-    template
-        .segments
-        .iter()
-        .filter_map(|segment| match segment {
-            model::Segment::Literal(_) => None,
-            model::Segment::Interpolation(interpolation) => {
-                let command = interpolation.commands.first()?;
-                Some((interpolation, command))
-            }
-        })
-        .enumerate()
-        .map(|(index, (interpolation, command))| SourceInfo {
-            index: index + 1,
-            kind: command.name.clone(),
-            argument: command
-                .body
-                .as_ref()
-                .map(|body| body.value.clone())
-                .unwrap_or_default(),
-            location: interpolation.location.clone(),
-        })
-        .collect()
 }
 
 fn print_sources(sources: &[SourceInfo], print: PrintMode) -> Result<()> {
