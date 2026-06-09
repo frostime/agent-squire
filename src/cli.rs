@@ -88,11 +88,11 @@ pub enum CliCommand {
     MdBacklinks(builtins::md_backlinks::MdBacklinksArgs),
 
     #[command(
-        name = "read-lines",
-        alias = "lines",
-        about = "Read known 1-based line slices from one text file"
+        name = "read-range",
+        alias = "range",
+        about = "Read known 1-based line ranges from one text file"
     )]
-    ReadLines(builtins::read_lines::ReadLinesArgs),
+    ReadRange(builtins::read_range::ReadRangeArgs),
 
     #[command(
         name = "patch-edit",
@@ -165,7 +165,7 @@ fn try_main() -> Result<u8> {
         CliCommand::Toc(args) => builtins::toc::run(args, &ctx),
         CliCommand::MdLinks(args) => builtins::md_links::run(args, &ctx),
         CliCommand::MdBacklinks(args) => builtins::md_backlinks::run(args, &ctx),
-        CliCommand::ReadLines(args) => builtins::read_lines::run(args, &ctx),
+        CliCommand::ReadRange(args) => builtins::read_range::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
         CliCommand::ImgWeb(args) => builtins::imgweb::run(args, &ctx),
         CliCommand::Now(_) => builtins::now::run(&ctx),

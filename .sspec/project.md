@@ -33,7 +33,7 @@ Examples: "snake_case for Python, camelCase for JS", "All API routes: /api/v1/*"
 
 - `snake_case` for Rust modules/files; CLI command names use `kebab-case`
 - Each builtin command = `src/builtins/<name>/mod.rs` vertical module
-- CLI names: `file-tree` / `file-info` / `md-toc` / `read-lines` / `patch-edit`; old names retained as aliases
+- CLI names: `file-tree` / `file-info` / `md-toc` / `read-range` / `patch-edit`; old names retained as aliases
 - Output unified via `runtime::output::Envelope<T>` JSON envelope
 - Agent-facing CLI output should be understandable and token-efficient; avoid repeating equivalent fields in compact output
 - Input unified via `@stdin` / `@file:path` / `@env:NAME` source syntax

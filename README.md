@@ -34,7 +34,7 @@ Agent Squire packages small, predictable local tools behind one CLI:
 | `file-info` | `fileinfo` | Inspect file metadata and text/binary format. |
 | `md-toc` | `mdtoc` | Show Markdown headings with 1-based line numbers. |
 | `md-links` | `mdlinks` | Extract Markdown references and resolve file targets. |
-| `read-lines` | `lines` | Read known 1-based line slices from one text file. |
+| `read-range` | `range` | Read known 1-based line ranges from one text file. |
 | `patch-edit` | `patch` | Apply SEARCH/REPLACE patch blocks. |
 | `imgweb` | — | Start a local web UI for composing multi-image prompts. |
 | `now` | — | Print the current local date and time. |
@@ -82,11 +82,11 @@ Use this before selecting exact files or line ranges to read.
 ### Read exact line ranges
 
 ```bash
-squire read-lines src/cli.rs --slice 1-80
-squire lines README.md -s start-20 -s 80-120 -s end
+squire read-range src/cli.rs --range 1-80
+squire range README.md -r start-20 -r 80-120 -r end
 ```
 
-Slice syntax:
+Range syntax:
 
 | Syntax | Meaning |
 |---|---|

@@ -11,32 +11,32 @@ use crate::runtime::output::{self, Envelope, PrintMode};
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Read known 1-based line slices from one text file.\n\nUse this when an agent already knows the exact line numbers to inspect and needs a cross-platform replacement for `sed -n` / PowerShell line slicing. It does not search text, parse syntax, or find symbols; use `rg`, `md-toc`, or language tooling for discovery first.\n\nSlice syntax is 1-based and inclusive:\n  N        one line\n  A-B      range from A through B\n  N~K      K lines before and after N\n\nN/A/B may be a positive integer, `start`, or `end`. Repeat --slice to read multiple slices; request order and duplicates are preserved.",
-    after_help = "Examples:\n  squire lines src/cli.rs -s 10\n  squire lines src/cli.rs -s 10-30\n  squire lines src/cli.rs -s 120~20\n  squire lines src/cli.rs -s start-80 -s 120-end\n  squire --print json lines src/cli.rs -s 10-30"
+    long_about = "Read known 1-based line ranges from one text file.\n\nUse this when an agent already knows the exact line numbers to inspect and needs a cross-platform replacement for `sed -n` / PowerShell line slicing. It does not search text, parse syntax, or find symbols; use `rg`, `md-toc`, or language tooling for discovery first.\n\nRange syntax is 1-based and inclusive:\n  N        one line\n  A-B      range from A through B\n  N~K      K lines before and after N\n\nN/A/B may be a positive integer, `start`, or `end`. Repeat --range to read multiple ranges; request order and duplicates are preserved.",
+    after_help = "Examples:\n  squire range src/cli.rs -r 10\n  squire range src/cli.rs -r 10-30\n  squire range src/cli.rs -r 120~20\n  squire range src/cli.rs -r start-80 -r 120-end\n  squire --print json range src/cli.rs -r 10-30"
 )]
-pub struct ReadLinesArgs {
+pub struct ReadRangeArgs {
     #[arg(help = "Text file to read")]
     pub file: PathBuf,
 
     #[arg(
-        short = 's',
-        long = "slice",
-        value_name = "SPEC",
+        short = 'r',
+        long = "range",
+        value_name = "RANGE",
         required = true,
-        help = "Repeatable 1-based slice: N, A-B, or N~K; supports start/end",
-        long_help = "Repeatable 1-based inclusive line slice selector. Forms: N, A-B, N~K. N/A/B may be a positive integer, start, or end. K must be a non-negative integer."
+        help = "Repeatable 1-based range: N, A-B, or N~K; supports start/end",
+        long_help = "Repeatable 1-based inclusive line range selector. Forms: N, A-B, N~K. N/A/B may be a positive integer, start, or end. K must be a non-negative integer."
     )]
-    pub slices: Vec<String>,
+    pub ranges: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
-struct ReadLinesData {
-    file: ReadLinesFile,
-    slices: Vec<ReadLinesSlice>,
+struct ReadRangeData {
+    file: ReadRangeFile,
+    slices: Vec<ReadRangeSlice>,
 }
 
 #[derive(Debug, Serialize)]
-struct ReadLinesFile {
+struct ReadRangeFile {
     path: String,
     encoding: String,
     newline: String,
@@ -44,7 +44,7 @@ struct ReadLinesFile {
 }
 
 #[derive(Debug, Serialize)]
-struct ReadLinesSlice {
+struct ReadRangeSlice {
     request: String,
     start_line: usize,
     end_line: usize,
@@ -59,14 +59,14 @@ enum Point {
 }
 
 #[derive(Debug, Clone)]
-enum SliceSpec {
+enum RangeSpec {
     One(Point),
     Range(Point, Point),
     Context(Point, usize),
 }
 
 #[derive(Debug)]
-struct ResolvedSlice {
+struct ResolvedRange {
     request: String,
     start_line: usize,
     end_line: usize,
@@ -80,11 +80,11 @@ struct TextFile {
     lines: Vec<String>,
 }
 
-pub fn run(args: ReadLinesArgs, ctx: &CommandContext) -> Result<u8> {
+pub fn run(args: ReadRangeArgs, ctx: &CommandContext) -> Result<u8> {
     let specs = args
-        .slices
+        .ranges
         .iter()
-        .map(|spec| parse_slice(spec))
+        .map(|spec| parse_range(spec))
         .collect::<Result<Vec<_>>>()?;
 
     let text = read_text_file(&args.file)?;
@@ -95,8 +95,8 @@ pub fn run(args: ReadLinesArgs, ctx: &CommandContext) -> Result<u8> {
     let mut warnings = Vec::new();
     let resolved = specs
         .iter()
-        .zip(args.slices.iter())
-        .map(|(spec, request)| resolve_slice(spec, request, text.lines.len()))
+        .zip(args.ranges.iter())
+        .map(|(spec, request)| resolve_range(spec, request, text.lines.len()))
         .collect::<Result<Vec<_>>>()?;
 
     let slices = resolved
@@ -104,11 +104,11 @@ pub fn run(args: ReadLinesArgs, ctx: &CommandContext) -> Result<u8> {
         .map(|slice| {
             if slice.clipped {
                 warnings.push(format!(
-                    "slice {} clipped to {}-{}",
+                    "range {} clipped to {}-{}",
                     slice.request, slice.start_line, slice.end_line
                 ));
             }
-            ReadLinesSlice {
+            ReadRangeSlice {
                 request: slice.request.clone(),
                 start_line: slice.start_line,
                 end_line: slice.end_line,
@@ -117,7 +117,7 @@ pub fn run(args: ReadLinesArgs, ctx: &CommandContext) -> Result<u8> {
         })
         .collect::<Vec<_>>();
 
-    let file = ReadLinesFile {
+    let file = ReadRangeFile {
         path: text.path,
         encoding: text.encoding,
         newline: text.newline,
@@ -128,8 +128,8 @@ pub fn run(args: ReadLinesArgs, ctx: &CommandContext) -> Result<u8> {
         PrintMode::Json => {
             let payload = Envelope {
                 ok: true,
-                command: "read-lines",
-                data: ReadLinesData { file, slices },
+                command: "read-range",
+                data: ReadRangeData { file, slices },
                 warnings,
                 meta: serde_json::json!({}),
             };
@@ -146,23 +146,23 @@ pub fn run(args: ReadLinesArgs, ctx: &CommandContext) -> Result<u8> {
     Ok(0)
 }
 
-fn parse_slice(raw: &str) -> Result<SliceSpec> {
+fn parse_range(raw: &str) -> Result<RangeSpec> {
     if let Some((point, context)) = raw.split_once('~') {
-        let point = parse_point(point).with_context(|| format!("invalid slice: {raw}"))?;
+        let point = parse_point(point).with_context(|| format!("invalid range: {raw}"))?;
         let context = context
             .parse::<usize>()
-            .with_context(|| format!("invalid slice: {raw}"))?;
-        return Ok(SliceSpec::Context(point, context));
+            .with_context(|| format!("invalid range: {raw}"))?;
+        return Ok(RangeSpec::Context(point, context));
     }
 
     if let Some((start, end)) = raw.split_once(':').or_else(|| raw.split_once('-')) {
-        let start = parse_point(start).with_context(|| format!("invalid slice: {raw}"))?;
-        let end = parse_point(end).with_context(|| format!("invalid slice: {raw}"))?;
-        return Ok(SliceSpec::Range(start, end));
+        let start = parse_point(start).with_context(|| format!("invalid range: {raw}"))?;
+        let end = parse_point(end).with_context(|| format!("invalid range: {raw}"))?;
+        return Ok(RangeSpec::Range(start, end));
     }
 
-    Ok(SliceSpec::One(
-        parse_point(raw).with_context(|| format!("invalid slice: {raw}"))?,
+    Ok(RangeSpec::One(
+        parse_point(raw).with_context(|| format!("invalid range: {raw}"))?,
     ))
 }
 
@@ -184,21 +184,21 @@ fn parse_point(raw: &str) -> Result<Point> {
     }
 }
 
-fn resolve_slice(spec: &SliceSpec, request: &str, line_count: usize) -> Result<ResolvedSlice> {
+fn resolve_range(spec: &RangeSpec, request: &str, line_count: usize) -> Result<ResolvedRange> {
     let (raw_start, raw_end) = match spec {
-        SliceSpec::One(point) => {
+        RangeSpec::One(point) => {
             let line = resolve_point(point, line_count);
             (line, line)
         }
-        SliceSpec::Range(start, end) => {
+        RangeSpec::Range(start, end) => {
             let start = resolve_point(start, line_count);
             let end = resolve_point(end, line_count);
             if start > end {
-                bail!("invalid slice {request}: start is after end");
+                bail!("invalid range {request}: start is after end");
             }
             (start, end)
         }
-        SliceSpec::Context(point, context) => {
+        RangeSpec::Context(point, context) => {
             let line = resolve_point(point, line_count);
             (line.saturating_sub(*context), line + context)
         }
@@ -206,7 +206,7 @@ fn resolve_slice(spec: &SliceSpec, request: &str, line_count: usize) -> Result<R
 
     let start_line = raw_start.clamp(1, line_count);
     let end_line = raw_end.clamp(1, line_count);
-    Ok(ResolvedSlice {
+    Ok(ResolvedRange {
         request: request.to_string(),
         start_line,
         end_line: end_line.max(start_line),
@@ -299,7 +299,7 @@ fn detect_newline(raw: &[u8]) -> String {
     }
 }
 
-fn print_compact(file: &ReadLinesFile, slices: &[ReadLinesSlice]) {
+fn print_compact(file: &ReadRangeFile, slices: &[ReadRangeSlice]) {
     println!(
         "{} | {} {} | {} lines | 1-based",
         file.path, file.encoding, file.newline, file.line_count

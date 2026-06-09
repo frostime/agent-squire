@@ -13,7 +13,7 @@ fn compact_output_reads_inclusive_line_range_with_one_based_numbers() {
     Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
-        .args(["lines", "sample.txt", "-s", "1-3"])
+        .args(["range", "sample.txt", "-r", "1-3"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -33,7 +33,7 @@ fn context_slice_reads_neighboring_lines_when_available() {
     Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
-        .args(["read-lines", "sample.txt", "--slice", "5~2"])
+        .args(["read-range", "sample.txt", "--range", "5~2"])
         .assert()
         .success()
         .stdout(predicate::str::contains("@@ 3-7 requested=5~2"))
@@ -49,7 +49,7 @@ fn internal_slice_aliases_accept_line_prefix_and_colon_range() {
     let output = Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
-        .args(["lines", "sample.txt", "-s", "L2-L3", "-s", "2:3"])
+        .args(["range", "sample.txt", "-r", "L2-L3", "-r", "2:3"])
         .assert()
         .success()
         .get_output()
@@ -67,7 +67,7 @@ fn internal_slice_aliases_accept_line_prefix_and_colon_range() {
 fn internal_slice_aliases_are_hidden_from_help() {
     Command::cargo_bin("squire")
         .unwrap()
-        .args(["lines", "--help"])
+        .args(["range", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("L10-L50").not())
@@ -82,7 +82,7 @@ fn start_and_end_resolve_to_file_boundaries() {
     let output = Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
-        .args(["lines", "sample.txt", "-s", "start-2", "-s", "end"])
+        .args(["range", "sample.txt", "-r", "start-2", "-r", "end"])
         .assert()
         .success()
         .get_output()
@@ -105,7 +105,7 @@ fn multiple_slices_preserve_request_order_and_duplicates() {
     let output = Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
-        .args(["lines", "sample.txt", "-s", "3", "-s", "1-2", "-s", "3"])
+        .args(["range", "sample.txt", "-r", "3", "-r", "1-2", "-r", "3"])
         .assert()
         .success()
         .get_output()
@@ -128,11 +128,11 @@ fn fully_out_of_bounds_slice_falls_back_to_last_line_with_warning() {
     Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
-        .args(["lines", "sample.txt", "-s", "100-120"])
+        .args(["range", "sample.txt", "-r", "100-120"])
         .assert()
         .success()
         .stderr(predicate::str::contains(
-            "warning: slice 100-120 clipped to 3-3",
+            "warning: range 100-120 clipped to 3-3",
         ))
         .stdout(predicate::str::contains("@@ 3-3 requested=100-120"))
         .stdout(predicate::str::contains("  3 | c"));
@@ -146,10 +146,10 @@ fn invalid_slice_fails_without_output_body() {
     Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
-        .args(["lines", "sample.txt", "-s", "0"])
+        .args(["range", "sample.txt", "-r", "0"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid slice: 0"))
+        .stderr(predicate::str::contains("invalid range: 0"))
         .stdout(predicate::str::is_empty());
 }
 
@@ -161,7 +161,7 @@ fn json_output_uses_standard_envelope() {
     let output = Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
-        .args(["--print", "json", "lines", "sample.txt", "-s", "2-3"])
+        .args(["--print", "json", "range", "sample.txt", "-r", "2-3"])
         .assert()
         .success()
         .get_output()
@@ -170,7 +170,7 @@ fn json_output_uses_standard_envelope() {
     let json: Value = serde_json::from_slice(&output).unwrap();
 
     assert_eq!(json["ok"], true);
-    assert_eq!(json["command"], "read-lines");
+    assert_eq!(json["command"], "read-range");
     assert_eq!(json["data"]["file"]["path"], "sample.txt");
     assert_eq!(json["data"]["file"]["encoding"], "utf-8");
     assert_eq!(json["data"]["file"]["newline"], "lf");

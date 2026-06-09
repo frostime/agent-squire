@@ -10,7 +10,7 @@ use crate::runtime::output::{self, Envelope, PrintMode};
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Pre-scan Markdown files and print their heading structure with 1-based line numbers.\n\nUse this when an agent needs to navigate long Markdown documents before selecting exact line ranges to read. It is a discovery tool for Markdown headings, not a full Markdown parser and not a text search command. Use `rg` for search and `read-lines` after choosing target lines.\n\nInputs may be Markdown files, directories, or glob patterns. Directories are searched recursively for .md files.",
+    long_about = "Pre-scan Markdown files and print their heading structure with 1-based line numbers.\n\nUse this when an agent needs to navigate long Markdown documents before selecting exact line ranges to read. It is a discovery tool for Markdown headings, not a full Markdown parser and not a text search command. Use `rg` for search and `read-range` after choosing target lines.\n\nInputs may be Markdown files, directories, or glob patterns. Directories are searched recursively for .md files.",
     after_help = "Examples:\n  squire md-toc README.md\n  squire md-toc docs --depth 3\n  squire md-toc \"docs/**/*.md\"\n  squire --print json md-toc README.md docs --depth 2"
 )]
 pub struct TocArgs {
