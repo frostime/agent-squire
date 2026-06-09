@@ -4,6 +4,15 @@ All notable changes to `agent-squire` are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- **`compose` command** — renders agent context templates into UTF-8 output.
+  - Supports `stdin`, `file`, `env`, and guarded `exec` sources with `${{...}}` interpolation.
+  - Writes rendered bodies to `%TEMP%/agent-temp` by default, with `--stdout` for pipeline mode.
+  - Includes multiline interpolation, no-arg command colon omission, modifiers, fallback policies, `--check`, `--list-sources`, and `--prompt`.
+
 ## [v0.6.0] — 2026-06-03
 
 ### Added

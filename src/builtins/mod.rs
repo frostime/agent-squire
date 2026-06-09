@@ -1,3 +1,4 @@
+pub mod compose;
 pub mod imgweb;
 pub mod info;
 pub mod md_backlinks;
