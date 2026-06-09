@@ -23,8 +23,11 @@ pub use parse::parse_patches;
 
 const PATCH_PROMPT: &str = r#"# Squire patch-edit format
 
-1) Targeted edit by SEARCH/REPLACE
+`asq patch` accepts structured patch blocks for local file edit.
 
+## Patch Block | 3 Type
+
+1) Targeted edit by str replace
 ```patch
 # <path>[:<range>]
 <<<<<<< SEARCH
@@ -33,25 +36,17 @@ old content
 new content
 >>>>>>> REPLACE
 ```
-
-Line ranges are 1-based and optional:
-  L10-L25
-  L10-
-  -L25
-  10-20
+Line range (optional): 1based; `L10-L25`, `L10-`, `-L25`; only in SEARCH method.
 
 2) Create new file
-
 ```patch
 # <path>
 <<<<<<< CREATE
 =======
 new file content
 >>>>>>> REPLACE
-```
-
+````
 3) Full overwrite
-
 ```patch
 # <path>
 <<<<<<< OVERWRITE
@@ -60,11 +55,27 @@ full replacement content
 >>>>>>> REPLACE
 ```
 
-Rules:
-- Markers must appear alone on their own lines.
-- CREATE and OVERWRITE upper blocks must be whitespace-only.
-- Same-file SEARCH patches are matched against original file content first.
-- Use --dry-run before writing.
+---
+
+- Fense-markers (<,=,>) appear alone per line, with 7 char repetitions
+- Section before '===' of CREATE and OVERWRITE MUST be empty
+
+## Multi-block bundles
+
+Multi-blocks patch is allowed to include concise human-readable explanations surrounding patch blocks. i.e. A text report includes
+patch blocks.
+
+```example
+First, xxx
+
+[[Patch Block]]
+
+Next, xxx
+
+[[Patch Block]]
+```
+
+WARN: Multi-blocks targeting the same file are matched against the original content. Overlapping matches cause all related blocks to fail.
 "#;
 
 #[derive(Args, Debug)]
