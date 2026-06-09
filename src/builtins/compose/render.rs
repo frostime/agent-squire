@@ -12,6 +12,8 @@ pub struct Rendered {
     pub truncated: bool,
 }
 
+// Render is the first phase allowed to evaluate sources. It walks the compiled
+// program, evals interpolations, and joins their text with literal segments.
 pub fn render_program(
     program: &CompiledTemplate,
     options: &RenderOptions,
@@ -49,6 +51,8 @@ pub fn render_program(
     })
 }
 
+// Fallbacks recover source/transform failures for this interpolation only. The
+// recovered literal is not fed back through remaining transforms.
 fn eval_interpolation(
     interpolation: &CompiledInterpolation,
     options: &RenderOptions,

@@ -33,6 +33,8 @@ pub fn resolve_source(
     }
 }
 
+// stdin is a process-wide stream, so repeated `${{stdin}}` references share one
+// cached read. Interactive stdin fails fast to avoid hanging agent runs.
 fn resolve_stdin(cache: &mut SourceCache) -> ComposeResult<ResolvedSource> {
     if let Some(text) = &cache.stdin {
         return Ok(ResolvedSource::Text(text.clone()));
@@ -99,6 +101,8 @@ fn resolve_env(name: &str) -> ComposeResult<ResolvedSource> {
     })
 }
 
+// Exec is the main trust boundary: it requires --allow-exec, runs through the
+// selected shell, captures both streams, and enforces timeout by polling/kill.
 fn resolve_exec(
     command_text: &str,
     options: &RenderOptions,

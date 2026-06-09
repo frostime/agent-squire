@@ -178,6 +178,8 @@ pub fn run(args: ComposeArgs, ctx: &CommandContext) -> Result<u8> {
         fail_on_truncated: args.fail_on_truncated,
     };
 
+    // Phase boundary: parse and compile must stay side-effect free so --check and
+    // --list-sources can validate untrusted templates without touching sources.
     let template_text = load_template(&args)?;
     let template = match parse_template(&template_text) {
         Ok(template) => template,

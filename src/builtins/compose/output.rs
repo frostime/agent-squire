@@ -66,6 +66,8 @@ pub fn write_rendered(
     }
 }
 
+// When --stdout is active, stdout already belongs to the rendered body. Status is
+// printed only for file targets to keep body streams machine-pipeable.
 pub fn print_success(status: &ComposeStatus, print: PrintMode) -> Result<()> {
     if status.output.is_none() {
         return Ok(());
@@ -141,6 +143,8 @@ fn temp_output_path() -> Result<PathBuf> {
     Ok(dir.join(format!("asq-compose-{timestamp}-{}.md", Uuid::new_v4())))
 }
 
+// Compose output is always UTF-8 without BOM. Write through a sibling tempfile so
+// failed renders or write errors do not leave partial target files.
 fn atomic_write_utf8(path: &Path, text: &str, overwrite: bool) -> Result<()> {
     if path.exists() && !overwrite {
         bail!("output file exists: {} (pass --overwrite)", path.display());

@@ -4,6 +4,8 @@ use super::model::{
     SourceInfo, SourceSpec, StreamSelector, Template, Transform,
 };
 
+// Compile performs static semantic analysis only: command role validation,
+// normalization, and source listing. It must never read stdin/files/env or exec.
 pub fn compile_template(template: &Template) -> ComposeResult<CompiledTemplate> {
     let mut segments = Vec::new();
     let mut sources = Vec::new();
@@ -144,6 +146,8 @@ fn validate_known_command(command: &CommandNode) -> ComposeResult<()> {
     Ok(())
 }
 
+// Normalize keeps authoring order only for text transforms. Controls, stream
+// selectors, and failure policies are classified here so render has no ambiguity.
 fn normalize(commands: &[CommandNode]) -> ComposeResult<super::model::NormalizedExpression> {
     let source = parse_source(&commands[0])?;
     let mut timeout = None;

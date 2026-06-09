@@ -3,6 +3,8 @@ use super::model::{
     Template,
 };
 
+// The parser is lexical/syntactic only. It preserves literal text and records
+// interpolation locations, but leaves command meaning to compile.rs.
 pub fn parse_template(input: &str) -> ComposeResult<Template> {
     let mut segments = Vec::new();
     let mut literal = String::new();
@@ -136,6 +138,8 @@ fn parse_command(input: &str) -> ComposeResult<CommandNode> {
     })
 }
 
+// Split on renderer pipelines, not shell pipes. JSON strings protect literal
+// `|>` so commands such as fallback: "a |> b" remain one command body.
 fn split_pipeline(input: &str) -> ComposeResult<Vec<&str>> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -206,6 +210,8 @@ fn split_pipeline(input: &str) -> ComposeResult<Vec<&str>> {
     Ok(parts)
 }
 
+// Closing braces inside JSON strings are literal text. Unquoted nested `${{`
+// is rejected here because recursive templates are outside the MVP model.
 fn find_interpolation_close(input: &str, start: usize) -> Option<usize> {
     let mut index = start;
     let mut in_string = false;

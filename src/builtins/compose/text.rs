@@ -42,6 +42,8 @@ pub fn utf8_bytes(text: &str) -> Vec<u8> {
     text.as_bytes().to_vec()
 }
 
+// Keep trailing newlines attached to each segment so line-based transforms avoid
+// silently normalizing LF/CRLF-shaped source text more than necessary.
 pub fn split_line_segments(text: &str) -> Vec<&str> {
     if text.is_empty() {
         return Vec::new();
@@ -145,6 +147,8 @@ pub fn limit_lines(text: &str, max: usize, fail: bool) -> ComposeResult<(String,
     Ok((out, true))
 }
 
+// Byte limits operate on UTF-8 output bytes; walk back to a char boundary so the
+// truncation marker never follows invalid UTF-8.
 pub fn limit_bytes(text: &str, max: usize, fail: bool) -> ComposeResult<(String, bool)> {
     if text.len() <= max {
         return Ok((text.to_string(), false));
