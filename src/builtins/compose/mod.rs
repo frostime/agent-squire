@@ -32,25 +32,36 @@ const DEFAULT_MAX_SPILL_BYTES: usize = 134_217_728;
 
 const COMPOSE_PROMPT: &str = r#"# Squire compose template guide
 
-`asq compose` renders agent context templates into UTF-8 output files.
+`asq compose` renders agent context templates into bounded UTF-8 output files.
+Prefer `--template-file` for non-trivial templates; use `--template` only for tiny one-liners because shell quoting differs across platforms.
 
-## Command
+## Workflow
 
 ```bash
+asq compose -t context.tpl.md --check
+asq compose -t context.tpl.md --list-sources
 asq compose -t context.tpl.md
-asq compose --template "${{file: README.md |> head: 80}}"
-asq compose -t context.tpl.md --stdout
-asq compose -t context.tpl.md --allow-exec
-asq compose -t context.tpl.md --allow-exec --max-command-bytes 1048576 --max-spill-bytes 134217728
 ```
 
-Default output is a persistent file under the system temp directory:
+Default output is a persistent file under the system temp `agent-temp` directory, and compact stdout reports its path:
 
 ```text
-%TEMP%/agent-temp/asq-compose-<timestamp>-<uuid>.md
+output: C:\Users\...\Temp\agent-temp\asq-compose-<timestamp>-<uuid>.md
 ```
 
-Use `--stdout` only when the rendered body should be piped to another command.
+Read that file for the rendered body. Use `--stdout` only when the body should be piped to another command.
+In JSON mode, status output reports `data.output.path` and does not embed the rendered body.
+
+## Source Decision Table
+
+| Need | Template |
+|---|---|
+| Current piped/user text | `${{stdin |> trim}}` |
+| Whole file or file slice | `${{file: README.md |> lines: 1-80}}` |
+| Environment variable | `${{env: NAME |> fallback: ""}}` |
+| Command stdout | `${{exec: git status --short |> timeout: 5 |> stdout}}` |
+| Command stderr | `${{exec: cargo test |> timeout: 120 |> stderr}}` |
+| Recover missing/failed source | `${{file: optional.md |> on-404: ""}}` |
 
 ## Syntax
 
@@ -65,96 +76,212 @@ Commands with bodies use `name: body`.
 Stage command roles:
 
 - runtime: `timeout: 5`
-- stream: `stdout`, `stderr`
-- transform: `lines: 1-END`, `head: 80`, `trim`, `indent: 2`
-- policy: `fallback: ""`, `on-404: "missing"`, `on-error: "failed"`
+- stream: `stdout`, `stderr` (`exec` only)
+- transform: `lines: 1-END`, `head: 80`, `tail: 40`, `trim`, `indent: 2`, `max-bytes: 4096`
+- policy: `fallback: ""`, `on-404: "missing"`, `on-error: "failed"`, `on-timeout: "timed out"`
 
 Text transforms run left-to-right. Runtime controls, stream selectors, and failure policies are normalized by role.
 
-## Multiline
+## Recipes
+
+Include a bounded README excerpt:
 
 ```md
+## README
+
 ${{
   file: README.md
-  |> lines: 1-END
+  |> lines: 1-120
   |> indent: 2
 }}
 ```
 
-Multiline literal values use JSON string escapes:
+Include stdin and trim surrounding whitespace:
+
+```md
+## Request
+
+${{stdin |> trim}}
+```
+
+Include command output safely:
+
+```md
+## Git Status
+
+${{exec: git status --short |> timeout: 5 |> stdout |> max-lines: 100 |> on-error: "git status unavailable"}}
+```
+
+Use a literal multiline fallback with JSON string escapes:
 
 ```md
 ${{file: missing.md |> fallback: "line1\nline2"}}
 ```
 
-## Safety
+## Safety And Limits
 
 `exec:` is disabled unless `--allow-exec` is passed. `stdin` fails when stdin is an interactive terminal, preventing accidental hangs.
 
-Large `exec:` stdout/stderr streams are drained while the child runs. Rendered text keeps the first `--max-command-bytes`; excess bytes spill to temp files under a per-render `--max-spill-bytes` budget. `--total-timeout` is the whole render-phase wall-clock budget.
+`--total-timeout` is the whole render-phase wall-clock budget.
+A local `timeout:` stage limits one `exec`; the effective exec timeout is the smaller of local timeout and remaining total timeout.
+
+Large `exec:` stdout/stderr streams are drained while the child runs.
+Rendered text keeps the first `--max-command-bytes` per stream; excess bytes spill to temp files under the per-render `--max-spill-bytes` budget.
+Size truncation does not kill `exec`; timeout does.
+
+## Debugging
+
+- Use `--check` to catch syntax and static modifier errors without reading files or running commands.
+- Use `--list-sources` to inspect discovered sources without resolving them.
+- If output contains `[asq compose: ... saved to PATH]`, read `PATH` for the spilled full stream.
+- In JSON mode, inspect `data.artifacts` on success and `error.artifacts` on failure.
+- Use `--fail-on-truncated` when truncation should fail the run but spill artifacts should still be preserved.
 "#;
 
 #[derive(Args, Debug)]
 #[command(
     long_about = "Render deterministic agent context templates. By default, rendered content is written to a persistent file under the system temp agent-temp directory; use --stdout for pipeline mode. Use --prompt for the agent-facing template guide.",
-    after_help = "Examples:\n  asq compose -t context.tpl.md\n  asq compose --template '${{file: README.md |> head: 80}}'\n  asq compose -t context.tpl.md --stdout\n  asq compose -t context.tpl.md --allow-exec"
+    after_help = "Workflow:\n  asq compose -t context.tpl.md --check\n  asq compose -t context.tpl.md --list-sources\n  asq compose -t context.tpl.md\n\nExamples:\n  asq compose -t context.tpl.md\n  asq compose --template '${{file: README.md |> head: 80}}'\n  asq compose -t context.tpl.md --stdout\n  asq compose -t context.tpl.md --allow-exec"
 )]
 pub struct ComposeArgs {
-    #[arg(short = 't', long = "template-file", value_name = "PATH")]
+    #[arg(
+        short = 't',
+        long = "template-file",
+        value_name = "PATH",
+        help_heading = "Template Input",
+        help = "Read template text from PATH"
+    )]
     pub template_file: Option<PathBuf>,
 
-    #[arg(long, value_name = "TEXT")]
+    #[arg(
+        long,
+        value_name = "TEXT",
+        help_heading = "Template Input",
+        help = "Inline template text; prefer --template-file for complex templates"
+    )]
     pub template: Option<String>,
 
-    #[arg(long, help = "Write rendered body to stdout instead of a file")]
+    #[arg(
+        long,
+        help_heading = "Output",
+        help = "Write rendered body to stdout instead of a file"
+    )]
     pub stdout: bool,
 
-    #[arg(short = 'o', long = "output", value_name = "PATH")]
+    #[arg(
+        short = 'o',
+        long = "output",
+        value_name = "PATH",
+        help_heading = "Output",
+        help = "Write rendered body to PATH"
+    )]
     pub output: Option<PathBuf>,
 
-    #[arg(long, help = "Allow replacing an existing --output file")]
+    #[arg(
+        long,
+        help_heading = "Output",
+        help = "Allow replacing an existing --output file"
+    )]
     pub overwrite: bool,
 
-    #[arg(long, help = "Enable exec: sources")]
+    #[arg(long, help_heading = "Execution", help = "Enable exec: sources")]
     pub allow_exec: bool,
 
-    #[arg(long, value_enum, default_value_t = ShellMode::Auto)]
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ShellMode::Auto,
+        help_heading = "Execution",
+        help = "Shell used for exec: sources"
+    )]
     pub shell: ShellMode,
 
-    #[arg(long, default_value_t = DEFAULT_TIMEOUT_SECONDS, value_name = "SECONDS")]
+    #[arg(
+        long,
+        default_value_t = DEFAULT_TIMEOUT_SECONDS,
+        value_name = "SECONDS",
+        help_heading = "Execution",
+        help = "Default timeout for one exec: source"
+    )]
     pub timeout: u64,
 
-    #[arg(long = "total-timeout", value_name = "SECONDS")]
+    #[arg(
+        long = "total-timeout",
+        value_name = "SECONDS",
+        help_heading = "Execution",
+        help = "Total render-phase wall-clock budget"
+    )]
     pub total_timeout: Option<u64>,
 
-    #[arg(long = "max-lines", value_name = "N")]
+    #[arg(
+        long = "max-lines",
+        value_name = "N",
+        help_heading = "Limits",
+        help = "Maximum rendered output lines after interpolation"
+    )]
     pub max_lines: Option<usize>,
 
-    #[arg(long = "max-bytes", value_name = "N")]
+    #[arg(
+        long = "max-bytes",
+        value_name = "N",
+        help_heading = "Limits",
+        help = "Maximum rendered output bytes after interpolation"
+    )]
     pub max_bytes: Option<usize>,
 
-    #[arg(long = "max-file-bytes", default_value_t = DEFAULT_MAX_FILE_BYTES, value_name = "N")]
+    #[arg(
+        long = "max-file-bytes",
+        default_value_t = DEFAULT_MAX_FILE_BYTES,
+        value_name = "N",
+        help_heading = "Limits",
+        help = "Maximum bytes read from one file: source"
+    )]
     pub max_file_bytes: usize,
 
-    #[arg(long = "max-command-bytes", default_value_t = DEFAULT_MAX_COMMAND_BYTES, value_name = "N")]
+    #[arg(
+        long = "max-command-bytes",
+        default_value_t = DEFAULT_MAX_COMMAND_BYTES,
+        value_name = "N",
+        help_heading = "Limits",
+        help = "Maximum exec stdout/stderr bytes kept in rendered text"
+    )]
     pub max_command_bytes: usize,
 
-    #[arg(long = "max-spill-bytes", default_value_t = DEFAULT_MAX_SPILL_BYTES, value_name = "N")]
+    #[arg(
+        long = "max-spill-bytes",
+        default_value_t = DEFAULT_MAX_SPILL_BYTES,
+        value_name = "N",
+        help_heading = "Limits",
+        help = "Per-run byte budget for exec spill artifact files"
+    )]
     pub max_spill_bytes: usize,
 
-    #[arg(long, help = "Fail instead of inserting truncation markers")]
+    #[arg(
+        long,
+        help_heading = "Limits",
+        help = "Fail instead of inserting truncation markers"
+    )]
     pub fail_on_truncated: bool,
 
-    #[arg(long, help = "Parse and validate without resolving sources")]
+    #[arg(
+        long,
+        help_heading = "Validation",
+        help = "Parse and validate without resolving sources"
+    )]
     pub check: bool,
 
     #[arg(
         long,
+        help_heading = "Validation",
         help = "List discovered sources without reading or executing them"
     )]
     pub list_sources: bool,
 
-    #[arg(long, help = "Print the agent-facing compose template guide")]
+    #[arg(
+        long,
+        help_heading = "Validation",
+        help = "Print the agent-facing compose template guide"
+    )]
     pub prompt: bool,
 }
 

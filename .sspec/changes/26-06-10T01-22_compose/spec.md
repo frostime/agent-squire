@@ -1,6 +1,6 @@
 ---
 name: compose
-status: REVIEW
+status: DONE
 change-type: single
 created: 2026-06-10 01:22:27
 reference:

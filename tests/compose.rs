@@ -18,7 +18,23 @@ fn compose_cli_prompt_prints_agent_guide() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Squire compose template guide"))
+        .stdout(predicate::str::contains("Source Decision Table"))
         .stdout(predicate::str::contains("--allow-exec"));
+}
+
+#[test]
+fn compose_cli_help_explains_agent_workflow_and_key_options() {
+    Command::cargo_bin("squire")
+        .unwrap()
+        .args(["compose", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Workflow:"))
+        .stdout(predicate::str::contains("Template Input:"))
+        .stdout(predicate::str::contains("Read template text from PATH"))
+        .stdout(predicate::str::contains(
+            "Per-run byte budget for exec spill artifact files",
+        ));
 }
 
 #[test]
@@ -111,7 +127,9 @@ fn compose_cli_check_rejects_stream_selector_on_non_exec_without_eval() {
         ])
         .assert()
         .code(4)
-        .stderr(predicate::str::contains("stdout/stderr selectors only apply to exec"));
+        .stderr(predicate::str::contains(
+            "stdout/stderr selectors only apply to exec",
+        ));
 }
 
 #[test]

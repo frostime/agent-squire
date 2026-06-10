@@ -1,6 +1,6 @@
 # Memory: compose
 
-**Updated**: 2026-06-10T16:58+08:00
+**Updated**: 2026-06-10T17:47+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -86,3 +86,5 @@ CLI treats the last valid bullet as the latest milestone.
 - [2026-06-10T16:22+08:00] Addressed subagent review findings for spill marker preservation, full artifact reporting on truncation errors, and low-cost post-eval total-timeout checks; `cargo test` and clippy passed.
 - [2026-06-10T16:47+08:00] Added compile-time source/stream compatibility validation so `stdout`/`stderr` on non-`exec` sources fail during `--check`; `cargo test` and clippy passed.
 - [2026-06-10T16:58+08:00] Created and registered `.sspec/spec-docs/compose-template-engine.md` for the compose maintainer contract.
+- [2026-06-10T17:42+08:00] Improved `compose --help` grouping/key option descriptions and rewrote `compose --prompt` as an agent workflow guide; `cargo test` and clippy passed.
+- [2026-06-10T17:47+08:00] User accepted compose work for merge; status set to DONE and version bumped to 0.7.0.
