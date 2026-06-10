@@ -244,6 +244,99 @@ fn compose_cli_output_requires_overwrite_for_existing_file() {
     assert_eq!(fs::read_to_string(output).unwrap(), "new");
 }
 
+#[test]
+fn compose_cli_exec_spills_large_output_to_artifact() {
+    let output = Command::cargo_bin("squire")
+        .unwrap()
+        .args([
+            "--print",
+            "json",
+            "compose",
+            "--template",
+            "${{exec: rustc --version |> head: 1}}",
+            "--allow-exec",
+            "--max-command-bytes",
+            "4",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["meta"]["schemaVersion"], 1);
+    assert_eq!(json["data"]["truncated"], true);
+    let rendered_path = json["data"]["output"]["path"].as_str().unwrap();
+    let rendered = fs::read_to_string(rendered_path).unwrap();
+    assert!(rendered.contains("rust"));
+    assert!(rendered.contains("stdout truncated after 4 bytes"));
+
+    let artifact = &json["data"]["artifacts"][0];
+    assert_eq!(artifact["kind"], "spill");
+    assert_eq!(artifact["sourceIndex"], 1);
+    assert_eq!(artifact["stream"], "stdout");
+    assert_eq!(artifact["complete"], true);
+    let spill_path = artifact["path"].as_str().unwrap();
+    assert!(fs::read_to_string(spill_path).unwrap().contains("rustc"));
+}
+
+#[test]
+fn compose_cli_fail_on_truncated_preserves_spill_artifact_in_error() {
+    let output = Command::cargo_bin("squire")
+        .unwrap()
+        .args([
+            "--print",
+            "json",
+            "compose",
+            "--template",
+            "${{exec: rustc --version}}",
+            "--allow-exec",
+            "--max-command-bytes",
+            "4",
+            "--fail-on-truncated",
+        ])
+        .assert()
+        .code(9)
+        .get_output()
+        .stderr
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["code"], "limit_exceeded");
+    let spill_path = json["error"]["artifacts"][0]["path"].as_str().unwrap();
+    assert!(fs::read_to_string(spill_path).unwrap().contains("rustc"));
+}
+
+#[test]
+fn compose_cli_template_load_errors_use_json_envelope() {
+    let dir = tempdir().unwrap();
+    let missing = dir.path().join("missing.tpl");
+
+    let output = Command::cargo_bin("squire")
+        .unwrap()
+        .args([
+            "--print",
+            "json",
+            "compose",
+            "--template-file",
+            missing.to_str().unwrap(),
+        ])
+        .assert()
+        .code(4)
+        .get_output()
+        .stderr
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["command"], "compose");
+    assert_eq!(json["error"]["code"], "template_read_failed");
+    assert_eq!(json["error"]["case"], "404");
+    assert_eq!(json["meta"]["schemaVersion"], 1);
+}
+
 fn tempdir_with_file(name: &str, content: &str) -> tempfile::TempDir {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join(name), content).unwrap();

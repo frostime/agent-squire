@@ -7,7 +7,7 @@ mod render;
 mod sources;
 mod text;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use clap::Args;
 use serde::Serialize;
 use std::fs;
@@ -18,7 +18,9 @@ use crate::runtime::output::{self as runtime_output, Envelope, PrintMode};
 
 use compile::compile_template;
 use model::{ComposeError, ComposeStatus, FailureCase, RenderOptions, ShellMode, SourceInfo};
-use output::{print_check_ok, print_error, print_success, resolve_target, write_rendered};
+use output::{
+    ComposeMeta, print_check_ok, print_error, print_success, resolve_target, write_rendered,
+};
 use parser::parse_template;
 use render::render_program;
 use text::decode_text;
@@ -26,6 +28,7 @@ use text::decode_text;
 const DEFAULT_TIMEOUT_SECONDS: u64 = 30;
 const DEFAULT_MAX_FILE_BYTES: usize = 1_048_576;
 const DEFAULT_MAX_COMMAND_BYTES: usize = 1_048_576;
+const DEFAULT_MAX_SPILL_BYTES: usize = 134_217_728;
 
 const COMPOSE_PROMPT: &str = r#"# Squire compose template guide
 
@@ -38,6 +41,7 @@ asq compose -t context.tpl.md
 asq compose --template "${{file: README.md |> head: 80}}"
 asq compose -t context.tpl.md --stdout
 asq compose -t context.tpl.md --allow-exec
+asq compose -t context.tpl.md --allow-exec --max-command-bytes 1048576 --max-spill-bytes 134217728
 ```
 
 Default output is a persistent file under the system temp directory:
@@ -86,6 +90,8 @@ ${{file: missing.md |> fallback: "line1\nline2"}}
 ## Safety
 
 `exec:` is disabled unless `--allow-exec` is passed. `stdin` fails when stdin is an interactive terminal, preventing accidental hangs.
+
+Large `exec:` stdout/stderr streams are drained while the child runs. Rendered text keeps the first `--max-command-bytes`; excess bytes spill to temp files under a per-render `--max-spill-bytes` budget. `--total-timeout` is the whole render-phase wall-clock budget.
 "#;
 
 #[derive(Args, Debug)]
@@ -133,6 +139,9 @@ pub struct ComposeArgs {
     #[arg(long = "max-command-bytes", default_value_t = DEFAULT_MAX_COMMAND_BYTES, value_name = "N")]
     pub max_command_bytes: usize,
 
+    #[arg(long = "max-spill-bytes", default_value_t = DEFAULT_MAX_SPILL_BYTES, value_name = "N")]
+    pub max_spill_bytes: usize,
+
     #[arg(long, help = "Fail instead of inserting truncation markers")]
     pub fail_on_truncated: bool,
 
@@ -175,34 +184,41 @@ pub fn run(args: ComposeArgs, ctx: &CommandContext) -> Result<u8> {
         max_bytes: args.max_bytes,
         max_file_bytes: args.max_file_bytes,
         max_command_bytes: args.max_command_bytes,
+        max_spill_bytes: args.max_spill_bytes,
         fail_on_truncated: args.fail_on_truncated,
     };
 
     // Phase boundary: parse and compile must stay side-effect free so --check and
     // --list-sources can validate untrusted templates without touching sources.
-    let template_text = load_template(&args)?;
+    let template_text = match load_template(&args) {
+        Ok(template_text) => template_text,
+        Err(error) => {
+            print_error(&error, ctx.print, &ctx.cwd)?;
+            return Ok(exit_code_for(&error));
+        }
+    };
     let template = match parse_template(&template_text) {
         Ok(template) => template,
         Err(error) => {
-            print_error(&error, ctx.print)?;
+            print_error(&error, ctx.print, &ctx.cwd)?;
             return Ok(exit_code_for(&error));
         }
     };
     let program = match compile_template(&template) {
         Ok(program) => program,
         Err(error) => {
-            print_error(&error, ctx.print)?;
+            print_error(&error, ctx.print, &ctx.cwd)?;
             return Ok(exit_code_for(&error));
         }
     };
 
     if args.check {
-        print_check_ok(ctx.print, program.sources.len())?;
+        print_check_ok(ctx.print, program.sources.len(), &ctx.cwd)?;
         return Ok(0);
     }
 
     if args.list_sources {
-        print_sources(&program.sources, ctx.print)?;
+        print_sources(&program.sources, ctx.print, &ctx.cwd)?;
         return Ok(0);
     }
 
@@ -214,27 +230,38 @@ pub fn run(args: ComposeArgs, ctx: &CommandContext) -> Result<u8> {
                 bytes: rendered.text.len(),
                 sources: program.sources.len(),
                 truncated: rendered.truncated,
+                artifacts: rendered.artifacts,
             };
-            print_success(&status, ctx.print)?;
+            print_success(&status, ctx.print, &ctx.cwd)?;
             Ok(0)
         }
         Err(error) => {
-            print_error(&error, ctx.print)?;
+            print_error(&error, ctx.print, &ctx.cwd)?;
             Ok(exit_code_for(&error))
         }
     }
 }
 
-fn load_template(args: &ComposeArgs) -> Result<String> {
+fn load_template(args: &ComposeArgs) -> model::ComposeResult<String> {
     if let Some(path) = &args.template_file {
-        let bytes = fs::read(path)
-            .with_context(|| format!("failed to read template {}", path.display()))?;
-        return decode_text(&bytes, &path.display().to_string()).map_err(anyhow::Error::from);
+        let bytes = fs::read(path).map_err(|err| {
+            let case = if err.kind() == std::io::ErrorKind::NotFound {
+                FailureCase::NotFound
+            } else {
+                FailureCase::Error
+            };
+            ComposeError::new(
+                "template_read_failed",
+                Some(case),
+                format!("Failed to read template {}: {err}", path.display()),
+            )
+        })?;
+        return decode_text(&bytes, &path.display().to_string());
     }
     Ok(args.template.clone().expect("validated template source"))
 }
 
-fn print_sources(sources: &[SourceInfo], print: PrintMode) -> Result<()> {
+fn print_sources(sources: &[SourceInfo], print: PrintMode, cwd: &std::path::Path) -> Result<()> {
     match print {
         PrintMode::Json => {
             let payload = Envelope {
@@ -244,7 +271,7 @@ fn print_sources(sources: &[SourceInfo], print: PrintMode) -> Result<()> {
                     sources: sources.to_vec(),
                 },
                 warnings: vec![],
-                meta: serde_json::json!({}),
+                meta: serde_json::to_value(ComposeMeta::new(cwd))?,
             };
             runtime_output::print_json(&payload)?;
         }

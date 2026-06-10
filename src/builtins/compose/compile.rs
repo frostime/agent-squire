@@ -14,9 +14,10 @@ pub fn compile_template(template: &Template) -> ComposeResult<CompiledTemplate> 
         match segment {
             Segment::Literal(text) => segments.push(CompiledSegment::Literal(text.clone())),
             Segment::Interpolation(interpolation) => {
-                let compiled = compile_interpolation(interpolation)?;
+                let source_index = sources.len() + 1;
+                let compiled = compile_interpolation(interpolation, source_index)?;
                 sources.push(source_info(
-                    sources.len() + 1,
+                    source_index,
                     interpolation,
                     &compiled.expression,
                 ));
@@ -28,7 +29,10 @@ pub fn compile_template(template: &Template) -> ComposeResult<CompiledTemplate> 
     Ok(CompiledTemplate { segments, sources })
 }
 
-fn compile_interpolation(interpolation: &Interpolation) -> ComposeResult<CompiledInterpolation> {
+fn compile_interpolation(
+    interpolation: &Interpolation,
+    source_index: usize,
+) -> ComposeResult<CompiledInterpolation> {
     validate_command_roles(&interpolation.commands)
         .map_err(|err| err.with_interpolation(interpolation))?;
     let expression =
@@ -36,6 +40,7 @@ fn compile_interpolation(interpolation: &Interpolation) -> ComposeResult<Compile
     Ok(CompiledInterpolation {
         raw: interpolation.raw.clone(),
         location: interpolation.location.clone(),
+        source_index,
         expression,
     })
 }

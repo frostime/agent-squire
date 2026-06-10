@@ -10,6 +10,9 @@ reference:
 - source: .sspec/changes/26-06-10T01-22_compose/reference/context-composer-prd.md
   type: doc
   note: Seed PRD preserved from clarify request
+- source: .sspec/changes/26-06-10T01-22_compose/revisions/002-exec-spill-artifacts-and-timeout-schema.md
+  type: revision
+  note: Add exec spill artifacts, render-wide timeout semantics, and compose JSON schema metadata.
 ---
 <!-- MUST follow frontmatter schema:
 status: PLANNING | DOING | REVIEW | DONE | BLOCKED

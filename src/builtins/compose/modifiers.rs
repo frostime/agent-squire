@@ -1,14 +1,16 @@
 use super::model::{
-    ComposeError, ComposeResult, FailureCase, NormalizedExpression, RangePoint, RangeSpec,
-    StreamSelector, Transform,
+    ComposeArtifact, ComposeError, ComposeResult, FailureCase, NormalizedExpression, RangePoint,
+    RangeSpec, StreamSelector, Transform,
 };
-use super::sources::ResolvedSource;
+use super::sources::{ResolvedSource, SourceText};
 use super::text;
 
 #[derive(Debug, Clone)]
 pub struct TransformResult {
     pub text: String,
     pub truncated: bool,
+    pub artifacts: Vec<ComposeArtifact>,
+    pub selected_artifact: Option<ComposeArtifact>,
 }
 
 pub fn select_and_transform(
@@ -16,7 +18,8 @@ pub fn select_and_transform(
     expression: &NormalizedExpression,
     fail_on_truncated: bool,
 ) -> ComposeResult<TransformResult> {
-    let mut text = match source {
+    let mut artifacts = Vec::new();
+    let selected = match source {
         ResolvedSource::Text(text) => {
             if expression.stream.is_some() {
                 return Err(ComposeError::new(
@@ -25,9 +28,18 @@ pub fn select_and_transform(
                     "stdout/stderr selectors only apply to exec: sources",
                 ));
             }
-            text
+            Box::new(SourceText {
+                text,
+                truncated: false,
+                artifact: None,
+            })
         }
-        ResolvedSource::Exec { stdout, stderr } => {
+        ResolvedSource::Exec {
+            stdout,
+            stderr,
+            artifacts: source_artifacts,
+        } => {
+            artifacts.extend(source_artifacts);
             match expression.stream.unwrap_or(StreamSelector::Stdout) {
                 StreamSelector::Stdout => stdout,
                 StreamSelector::Stderr => stderr,
@@ -35,13 +47,29 @@ pub fn select_and_transform(
         }
     };
 
-    let mut truncated = false;
+    if selected.truncated && fail_on_truncated {
+        return Err(ComposeError::new(
+            "limit_exceeded",
+            Some(FailureCase::Limit),
+            "Command output byte limit exceeded",
+        )
+        .with_artifacts(artifacts));
+    }
+
+    let selected_artifact = selected.artifact.clone();
+    let mut text = selected.text;
+    let mut truncated = selected.truncated;
     for transform in &expression.transforms {
         let result = apply_transform(&text, transform, fail_on_truncated)?;
         text = result.text;
         truncated |= result.truncated;
     }
-    Ok(TransformResult { text, truncated })
+    Ok(TransformResult {
+        text,
+        truncated,
+        artifacts,
+        selected_artifact,
+    })
 }
 
 pub fn apply_global_limits(
@@ -87,7 +115,12 @@ fn apply_transform(
         Transform::MaxLines(max) => text::limit_lines(input, *max, fail_on_truncated)?,
         Transform::MaxBytes(max) => text::limit_bytes(input, *max, fail_on_truncated)?,
     };
-    Ok(TransformResult { text, truncated })
+    Ok(TransformResult {
+        text,
+        truncated,
+        artifacts: Vec::new(),
+        selected_artifact: None,
+    })
 }
 
 fn start_line(range: &RangeSpec, text: &str) -> usize {

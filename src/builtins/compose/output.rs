@@ -20,12 +20,28 @@ pub enum OutputTarget {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposeMeta {
+    pub schema_version: u8,
+    pub cwd: String,
+}
+
+impl ComposeMeta {
+    pub fn new(cwd: &Path) -> Self {
+        Self {
+            schema_version: 1,
+            cwd: cwd.display().to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct ErrorEnvelope<'a> {
     ok: bool,
     command: &'static str,
     error: &'a ComposeError,
     warnings: Vec<String>,
-    meta: serde_json::Value,
+    meta: ComposeMeta,
 }
 
 pub fn resolve_target(stdout: bool, output: Option<PathBuf>) -> Result<OutputTarget> {
@@ -68,7 +84,7 @@ pub fn write_rendered(
 
 // When --stdout is active, stdout already belongs to the rendered body. Status is
 // printed only for file targets to keep body streams machine-pipeable.
-pub fn print_success(status: &ComposeStatus, print: PrintMode) -> Result<()> {
+pub fn print_success(status: &ComposeStatus, print: PrintMode, cwd: &Path) -> Result<()> {
     if status.output.is_none() {
         return Ok(());
     }
@@ -80,7 +96,7 @@ pub fn print_success(status: &ComposeStatus, print: PrintMode) -> Result<()> {
                 command: "compose",
                 data: status,
                 warnings: vec![],
-                meta: serde_json::json!({}),
+                meta: serde_json::to_value(ComposeMeta::new(cwd))?,
             };
             output::print_json(&payload)?;
         }
@@ -93,7 +109,7 @@ pub fn print_success(status: &ComposeStatus, print: PrintMode) -> Result<()> {
     Ok(())
 }
 
-pub fn print_check_ok(print: PrintMode, sources: usize) -> Result<()> {
+pub fn print_check_ok(print: PrintMode, sources: usize, cwd: &Path) -> Result<()> {
     match print {
         PrintMode::Json => {
             let payload = Envelope {
@@ -101,7 +117,7 @@ pub fn print_check_ok(print: PrintMode, sources: usize) -> Result<()> {
                 command: "compose",
                 data: serde_json::json!({ "valid": true, "sources": sources }),
                 warnings: vec![],
-                meta: serde_json::json!({}),
+                meta: serde_json::to_value(ComposeMeta::new(cwd))?,
             };
             output::print_json(&payload)?;
         }
@@ -110,7 +126,7 @@ pub fn print_check_ok(print: PrintMode, sources: usize) -> Result<()> {
     Ok(())
 }
 
-pub fn print_error(error: &ComposeError, print: PrintMode) -> Result<()> {
+pub fn print_error(error: &ComposeError, print: PrintMode, cwd: &Path) -> Result<()> {
     match print {
         PrintMode::Json => {
             let payload = ErrorEnvelope {
@@ -118,7 +134,7 @@ pub fn print_error(error: &ComposeError, print: PrintMode) -> Result<()> {
                 command: "compose",
                 error,
                 warnings: vec![],
-                meta: serde_json::json!({}),
+                meta: ComposeMeta::new(cwd),
             };
             eprintln!("{}", serde_json::to_string_pretty(&payload)?);
         }
@@ -130,6 +146,11 @@ pub fn print_error(error: &ComposeError, print: PrintMode) -> Result<()> {
                 );
             } else {
                 eprintln!("error: {}: {}", error.code, error.message);
+            }
+            if let Some(artifacts) = &error.artifacts {
+                for artifact in artifacts.iter() {
+                    eprintln!("artifact: {}", artifact.message);
+                }
             }
         }
     }

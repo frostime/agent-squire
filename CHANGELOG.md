@@ -12,6 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   - Supports `stdin`, `file`, `env`, and guarded `exec` sources with `${{...}}` interpolation.
   - Writes rendered bodies to `%TEMP%/agent-temp` by default, with `--stdout` for pipeline mode.
   - Includes multiline interpolation, no-arg command colon omission, modifiers, fallback policies, `--check`, `--list-sources`, and `--prompt`.
+  - Drains large `exec` output into bounded temp spill artifacts with JSON metadata and render-wide `--total-timeout` semantics.
 
 ## [v0.6.0] — 2026-06-03
 

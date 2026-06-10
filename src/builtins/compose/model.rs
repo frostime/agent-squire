@@ -23,6 +23,7 @@ pub enum CompiledSegment {
 pub struct CompiledInterpolation {
     pub raw: String,
     pub location: Location,
+    pub source_index: usize,
     pub expression: NormalizedExpression,
 }
 
@@ -112,6 +113,8 @@ pub struct ComposeError {
     pub raw: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<Location>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Box<[ComposeArtifact]>>,
 }
 
 impl ComposeError {
@@ -126,6 +129,7 @@ impl ComposeError {
             message: message.into(),
             raw: None,
             location: None,
+            artifacts: None,
         }
     }
 
@@ -149,6 +153,13 @@ impl ComposeError {
         }
         if self.location.is_none() {
             self.location = Some(interpolation.location.clone());
+        }
+        self
+    }
+
+    pub fn with_artifacts(mut self, artifacts: Vec<ComposeArtifact>) -> Self {
+        if !artifacts.is_empty() {
+            self.artifacts = Some(artifacts.into_boxed_slice());
         }
         self
     }
@@ -252,6 +263,7 @@ pub struct RenderOptions {
     pub max_bytes: Option<usize>,
     pub max_file_bytes: usize,
     pub max_command_bytes: usize,
+    pub max_spill_bytes: usize,
     pub fail_on_truncated: bool,
 }
 
@@ -270,10 +282,27 @@ pub struct OutputInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposeArtifact {
+    pub kind: String,
+    pub path: String,
+    pub source_index: usize,
+    pub source_kind: String,
+    pub stream: String,
+    pub rendered_bytes: usize,
+    pub saved_bytes: usize,
+    pub max_saved_bytes: usize,
+    pub complete: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ComposeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<OutputInfo>,
     pub bytes: usize,
     pub sources: usize,
     pub truncated: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<ComposeArtifact>,
 }

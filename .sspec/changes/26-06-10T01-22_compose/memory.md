@@ -1,6 +1,6 @@
 # Memory: compose
 
-**Updated**: 2026-06-10T02:52+08:00
+**Updated**: 2026-06-10T15:31+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -22,7 +22,7 @@ A  .sspec/requests/26-06-10T00-36_composer.md
 <!-- Where we are and what's next — one to three lines.
 This is the resume entry point; the first section an agent reads on cold start. -->
 
-Revision 001 is complete and the change is back in REVIEW. `compile.rs` now owns static semantic analysis; `render.rs` owns render/eval flow.
+Revision 002 is complete and the change is back in REVIEW. Exec output now drains concurrently with bounded temp spill artifacts; compose JSON includes schema metadata/artifacts; full validation passes.
 
 ## Key Files
 <!-- Files critical to understanding/continuing this change.
@@ -64,6 +64,9 @@ Obsolete items → mark [obsolete: timestamp], never silently delete. -->
 - [2026-06-10T01:33+08:00] [Decision] Syntax must distinguish command roles explicitly: source command first, then runtime controls, stream selectors, text transforms, and failure policies with deterministic normalization.
 - [2026-06-10T01:33+08:00] [Decision] No-argument commands may omit the colon; body-taking commands still require `name: body`.
 - [2026-06-10T01:33+08:00] [Decision] Add `compose --prompt` as an embedded agent-facing long guide, following `patch-edit --prompt` precedent.
+- [2026-06-10T15:12+08:00] [Decision] Exec output that exceeds `--max-command-bytes` should not kill the child for size alone; drain stdout/stderr continuously, keep the rendered prefix, and spill excess output under a shared per-run 128MiB temp artifact budget.
+- [2026-06-10T15:12+08:00] [Decision] `--total-timeout` means total render-phase wall-clock budget across all interpolations; an exec source uses the smaller of its local timeout and remaining total budget.
+- [2026-06-10T15:12+08:00] [Decision] Compose JSON envelopes should include `meta.schemaVersion = 1`, `meta.cwd`, and optional spill `artifacts` in success/error payloads.
 
 ## Milestones
 <!-- MUST append one line per session. Pure facts; new entries appended at the end.
@@ -77,3 +80,6 @@ CLI treats the last valid bullet as the latest milestone.
 - [2026-06-10T02:10+08:00] Completed implementation and moved change to REVIEW.
 - [2026-06-10T02:36+08:00] Created revision 001 for compile/render phase separation.
 - [2026-06-10T02:52+08:00] Completed revision 001 refactor and returned change to REVIEW.
+- [2026-06-10T15:12+08:00] Created revision 002 and returned the change to DOING for exec spill artifacts and JSON schema work.
+- [2026-06-10T15:31+08:00] Completed revision 002 and returned the change to REVIEW after `cargo test` and `cargo clippy --all-targets --all-features -- -D warnings` passed; `cargo fmt --check` remains blocked by pre-existing `src/builtins/imgweb/mod.rs` formatting diff.
+- [2026-06-10T16:22+08:00] Addressed subagent review findings for spill marker preservation, full artifact reporting on truncation errors, and low-cost post-eval total-timeout checks; `cargo test` and clippy passed.

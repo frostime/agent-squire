@@ -190,6 +190,8 @@ output: C:\Users\...\Temp\agent-temp\asq-compose-20260610T012244-....md
 
 Use `--stdout` when the rendered body should be piped. JSON status never embeds the rendered body.
 
+Large `exec:` streams are drained while the command runs. The rendered body keeps at most `--max-command-bytes` per stream; excess output is saved under the temp `agent-temp` directory as a spill artifact and referenced from the truncation marker / JSON `artifacts`. `--max-spill-bytes` defaults to `134217728` bytes as a per-run spill budget. Size truncation does not kill `exec:`; timeout does.
+
 Template examples:
 
 ```md
@@ -211,6 +213,8 @@ ${{exec: git status --short |> timeout: 5 |> stdout |> max-lines: 100 |> on-erro
 ```
 
 Command roles are normalized: source first, runtime controls and stream selectors before text transforms, and failure policies as recovery rules. Text transforms run left-to-right. No-argument commands may omit `:`; body-taking commands use `name: body`.
+
+`--total-timeout` is the total render-phase wall-clock budget across all `${{...}}` interpolations. For `exec:`, the effective command timeout is the smaller of the local `timeout:` / global `--timeout` and the remaining total render budget.
 
 ## Input sources
 

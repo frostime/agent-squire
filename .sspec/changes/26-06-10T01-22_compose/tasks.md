@@ -1,6 +1,6 @@
 ---
 change: "compose"
-updated: "2026-06-10T01:46+08:00"
+updated: "2026-06-10T15:12+08:00"
 ---
 
 # Tasks
@@ -71,6 +71,15 @@ If the work belongs in a new follow-up or replacement change, the agent MUST NOT
 - [x] Run final validation and record unrelated baseline failures.
 **Verification**: `cargo test --test compose`, `cargo test --test clap`, and `cargo clippy --all-targets --all-features -- -D warnings` pass. Full `cargo test` is blocked by existing `tests/md_backlinks.rs` failure; `cargo fmt --check` is blocked by existing `src/builtins/imgweb/mod.rs` formatting diff.
 
+### Feedback Tasks (→ [002-exec-spill-artifacts-and-timeout-schema](./revisions/002-exec-spill-artifacts-and-timeout-schema.md)) ✅
+- [x] Add artifact/error/status data model and compose JSON metadata schema in `src/builtins/compose/model.rs` and `src/builtins/compose/output.rs`.
+- [x] Add `--max-spill-bytes` with a 128MiB per-render budget in `src/builtins/compose/mod.rs`.
+- [x] Refactor `exec:` capture in `src/builtins/compose/sources.rs` to concurrently drain stdout/stderr, spill excess output, and avoid pipe deadlock.
+- [x] Enforce `--total-timeout` as a render-wide deadline in `src/builtins/compose/render.rs` and pass remaining budget to exec resolution.
+- [x] Route template-load failures through compose structured errors and preserve artifacts on truncation errors.
+- [x] Update `README.md`, `CHANGELOG.md`, and targeted compose tests.
+**Verification**: `cargo test --test compose`, targeted compose unit tests, and `cargo clippy --all-targets --all-features -- -D warnings` pass; `cargo fmt` is run or baseline blocker is recorded.
+
 ---
 
 ## Progress
@@ -86,6 +95,7 @@ If the work belongs in a new follow-up or replacement change, the agent MUST NOT
 | Phase 5 | 3/3 | ✅ |
 | Phase 6 | 3/3 | ✅ |
 | Feedback 001 | 5/5 | ✅ |
+| Feedback 002 | 6/6 | ✅ |
 
 **Recent**:
 - [2026-06-10T01:46+08:00] Planned implementation phases from confirmed design.
@@ -93,3 +103,5 @@ If the work belongs in a new follow-up or replacement change, the agent MUST NOT
 - [2026-06-10T02:05+08:00] Completed compose implementation and targeted validation; recorded unrelated baseline failures.
 - [2026-06-10T02:36+08:00] Started revision 001 to separate parse/compile/render phases.
 - [2026-06-10T02:52+08:00] Completed revision 001 refactor and targeted validation.
+- [2026-06-10T15:12+08:00] Started revision 002 for exec spill artifacts, render-wide timeout semantics, and compose JSON schema metadata.
+- [2026-06-10T15:31+08:00] Completed revision 002 implementation and validation; returned change to REVIEW.
