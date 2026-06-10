@@ -36,6 +36,7 @@ Agent Squire packages small, predictable local tools behind one CLI:
 | `md-links` | `mdlinks` | Extract Markdown references and resolve file targets. |
 | `read-range` | `range` | Read known 1-based line ranges from one text file. |
 | `patch-edit` | `patch` | Apply SEARCH/REPLACE patch blocks. |
+| `compose` | — | Render agent context templates into bounded UTF-8 output. |
 | `imgweb` | — | Start a local web UI for composing multi-image prompts. |
 | `now` | — | Print the current local date and time. |
 | `list` | — | List built-in commands. |
@@ -168,6 +169,52 @@ squire imgweb
 ```
 
 `imgweb` starts a local browser UI for arranging uploaded images and generating a structured prompt.
+
+### Compose agent context
+
+`compose` renders templates that pull content from stdin, files, environment variables, or guarded shell commands.
+
+```bash
+asq compose -t context.tpl.md
+asq compose --template '${{file: README.md |> head: 80}}'
+asq compose -t context.tpl.md --stdout
+asq compose -t context.tpl.md --allow-exec
+asq compose --prompt
+```
+
+By default, rendered content is written to a persistent UTF-8 file under the system temp `agent-temp` directory, and stdout reports the path:
+
+```text
+output: C:\Users\...\Temp\agent-temp\asq-compose-20260610T012244-....md
+```
+
+Use `--stdout` when the rendered body should be piped. JSON status never embeds the rendered body.
+
+Large `exec:` streams are drained while the command runs. The rendered body keeps at most `--max-command-bytes` per stream; excess output is saved under the temp `agent-temp` directory as a spill artifact and referenced from the truncation marker / JSON `artifacts`. `--max-spill-bytes` defaults to `134217728` bytes as a per-run spill budget. Size truncation does not kill `exec:`; timeout does.
+
+Template examples:
+
+```md
+## Request
+
+${{stdin |> trim}}
+
+## README
+
+${{
+  file: README.md
+  |> lines: 1-END
+  |> indent: 2
+}}
+
+## Git
+
+${{exec: git status --short |> timeout: 5 |> stdout |> max-lines: 100 |> on-error: "git unavailable"}}
+```
+
+Command roles are normalized: source first, runtime controls and stream selectors before text transforms, and failure policies as recovery rules. Text transforms run left-to-right. No-argument commands may omit `:`; body-taking commands use `name: body`.
+
+`--total-timeout` is the total render-phase wall-clock budget across all `${{...}}` interpolations. For `exec:`, the effective command timeout is the smaller of the local `timeout:` / global `--timeout` and the remaining total render budget.
 
 ## Input sources
 
