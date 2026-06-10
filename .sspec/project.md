@@ -51,7 +51,7 @@ NOT a restating of code behavior — if readable from code+comments, it doesn't 
 MUST keep entries in sync with actual spec-doc files.
 Format: `- [name](spec-docs/<file>) — one-line summary` -->
 
-(none yet — create spec-docs with `sspec doc new "<name>"`)
+- [Compose Template Engine](spec-docs/compose-template-engine.md) — parse/compile/render phases, source/modifier contracts, exec spill artifacts, and JSON output schema.
 
 ## Notes
 <!-- Project-level memory. Append-only log of learnings, gotchas, preferences.

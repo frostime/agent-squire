@@ -78,6 +78,7 @@ If the work belongs in a new follow-up or replacement change, the agent MUST NOT
 - [x] Enforce `--total-timeout` as a render-wide deadline in `src/builtins/compose/render.rs` and pass remaining budget to exec resolution.
 - [x] Route template-load failures through compose structured errors and preserve artifacts on truncation errors.
 - [x] Update `README.md`, `CHANGELOG.md`, and targeted compose tests.
+- [x] Create spec-doc `.sspec/spec-docs/compose-template-engine.md` and register it in `.sspec/project.md`.
 **Verification**: `cargo test --test compose`, targeted compose unit tests, and `cargo clippy --all-targets --all-features -- -D warnings` pass; `cargo fmt` is run or baseline blocker is recorded.
 
 ---
@@ -95,7 +96,7 @@ If the work belongs in a new follow-up or replacement change, the agent MUST NOT
 | Phase 5 | 3/3 | ✅ |
 | Phase 6 | 3/3 | ✅ |
 | Feedback 001 | 5/5 | ✅ |
-| Feedback 002 | 6/6 | ✅ |
+| Feedback 002 | 7/7 | ✅ |
 
 **Recent**:
 - [2026-06-10T01:46+08:00] Planned implementation phases from confirmed design.
@@ -105,3 +106,4 @@ If the work belongs in a new follow-up or replacement change, the agent MUST NOT
 - [2026-06-10T02:52+08:00] Completed revision 001 refactor and targeted validation.
 - [2026-06-10T15:12+08:00] Started revision 002 for exec spill artifacts, render-wide timeout semantics, and compose JSON schema metadata.
 - [2026-06-10T15:31+08:00] Completed revision 002 implementation and validation; returned change to REVIEW.
+- [2026-06-10T16:55+08:00] Added compose template engine spec-doc and registered it in project context.

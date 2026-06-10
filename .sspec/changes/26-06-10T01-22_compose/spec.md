@@ -13,6 +13,9 @@ reference:
 - source: .sspec/changes/26-06-10T01-22_compose/revisions/002-exec-spill-artifacts-and-timeout-schema.md
   type: revision
   note: Add exec spill artifacts, render-wide timeout semantics, and compose JSON schema metadata.
+- source: .sspec/spec-docs/compose-template-engine.md
+  type: doc
+  note: Maintainer contract for compose parse/compile/render phases and output schema.
 ---
 <!-- MUST follow frontmatter schema:
 status: PLANNING | DOING | REVIEW | DONE | BLOCKED

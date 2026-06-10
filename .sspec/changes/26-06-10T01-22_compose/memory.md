@@ -1,6 +1,6 @@
 # Memory: compose
 
-**Updated**: 2026-06-10T15:31+08:00
+**Updated**: 2026-06-10T16:58+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -31,6 +31,7 @@ Revision 002 is complete and the change is back in REVIEW. Exec output now drain
 - `.sspec/changes/26-06-10T01-22_compose/spec.md` — formal change scope and user-visible contract.
 - `.sspec/changes/26-06-10T01-22_compose/design.md` — technical design for parser, sources, modifiers, and output behavior.
 - `.sspec/changes/26-06-10T01-22_compose/reference/context-composer-prd.md` — original seed PRD retained for traceability.
+- `.sspec/spec-docs/compose-template-engine.md` — maintainer contract for compose phase boundaries, source semantics, exec spill artifacts, and output schema.
 - `src/cli.rs` — top-level command registration and global `--cwd` / `--print` behavior.
 - `src/runtime/input.rs` — existing `@stdin` / `@file:` / `@env:` argument-source syntax that must remain separate from compose template sources.
 
@@ -84,3 +85,4 @@ CLI treats the last valid bullet as the latest milestone.
 - [2026-06-10T15:31+08:00] Completed revision 002 and returned the change to REVIEW after `cargo test` and `cargo clippy --all-targets --all-features -- -D warnings` passed; `cargo fmt --check` remains blocked by pre-existing `src/builtins/imgweb/mod.rs` formatting diff.
 - [2026-06-10T16:22+08:00] Addressed subagent review findings for spill marker preservation, full artifact reporting on truncation errors, and low-cost post-eval total-timeout checks; `cargo test` and clippy passed.
 - [2026-06-10T16:47+08:00] Added compile-time source/stream compatibility validation so `stdout`/`stderr` on non-`exec` sources fail during `--check`; `cargo test` and clippy passed.
+- [2026-06-10T16:58+08:00] Created and registered `.sspec/spec-docs/compose-template-engine.md` for the compose maintainer contract.
