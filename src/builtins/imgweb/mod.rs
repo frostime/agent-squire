@@ -474,7 +474,12 @@ fn sanitize_slug(raw: Option<&str>) -> Option<String> {
     }
     let slug: String = raw
         .chars()
-        .filter(|c| !matches!(c, '/' | '\\' | '\0' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .filter(|c| {
+            !matches!(
+                c,
+                '/' | '\\' | '\0' | ':' | '*' | '?' | '"' | '<' | '>' | '|'
+            )
+        })
         .collect();
     let slug = slug.trim().to_string();
     if slug.is_empty() { None } else { Some(slug) }
@@ -493,8 +498,14 @@ fn slug_to_filename(slug: &str) -> String {
             last_dash = true;
         }
     }
-    while out.ends_with('-') { out.pop(); }
-    if out.is_empty() { "img".to_string() } else { out }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "img".to_string()
+    } else {
+        out
+    }
 }
 
 fn extension_from(content_type: Option<&str>, filename: Option<&str>) -> String {
