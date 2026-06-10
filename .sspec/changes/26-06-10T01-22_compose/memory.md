@@ -83,3 +83,4 @@ CLI treats the last valid bullet as the latest milestone.
 - [2026-06-10T15:12+08:00] Created revision 002 and returned the change to DOING for exec spill artifacts and JSON schema work.
 - [2026-06-10T15:31+08:00] Completed revision 002 and returned the change to REVIEW after `cargo test` and `cargo clippy --all-targets --all-features -- -D warnings` passed; `cargo fmt --check` remains blocked by pre-existing `src/builtins/imgweb/mod.rs` formatting diff.
 - [2026-06-10T16:22+08:00] Addressed subagent review findings for spill marker preservation, full artifact reporting on truncation errors, and low-cost post-eval total-timeout checks; `cargo test` and clippy passed.
+- [2026-06-10T16:47+08:00] Added compile-time source/stream compatibility validation so `stdout`/`stderr` on non-`exec` sources fail during `--check`; `cargo test` and clippy passed.

@@ -100,6 +100,21 @@ fn compose_cli_check_catches_compile_conflicts_without_execute() {
 }
 
 #[test]
+fn compose_cli_check_rejects_stream_selector_on_non_exec_without_eval() {
+    Command::cargo_bin("squire")
+        .unwrap()
+        .args([
+            "compose",
+            "--template",
+            "${{file: definitely-missing.txt |> stderr}}",
+            "--check",
+        ])
+        .assert()
+        .code(4)
+        .stderr(predicate::str::contains("stdout/stderr selectors only apply to exec"));
+}
+
+#[test]
 fn compose_cli_check_and_list_sources_do_not_execute() {
     Command::cargo_bin("squire")
         .unwrap()

@@ -210,6 +210,14 @@ fn normalize(commands: &[CommandNode]) -> ComposeResult<super::model::Normalized
         }
     }
 
+    if stream.is_some() && !matches!(source, SourceSpec::Exec(_)) {
+        return Err(ComposeError::new(
+            "invalid_modifier",
+            Some(FailureCase::Modifier),
+            "stdout/stderr selectors only apply to exec: sources",
+        ));
+    }
+
     Ok(super::model::NormalizedExpression {
         source,
         timeout,
@@ -354,5 +362,13 @@ mod tests {
         assert_eq!(program.sources.len(), 2);
         assert_eq!(program.sources[0].kind, "file");
         assert_eq!(program.sources[1].kind, "stdin");
+    }
+
+    #[test]
+    fn rejects_stream_selector_on_non_exec_source_at_compile_time() {
+        let ast = parse_template("${{file: missing.txt |> stderr}}").unwrap();
+        let err = compile_template(&ast).unwrap_err();
+        assert_eq!(err.code, "invalid_modifier");
+        assert_eq!(err.case, Some(FailureCase::Modifier));
     }
 }
