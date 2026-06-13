@@ -1,6 +1,6 @@
 # Memory: gather
 
-**Updated**: 2026-06-13T18:50+08:00
+**Updated**: 2026-06-13T19:25+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -21,7 +21,7 @@ This section records the change starting point in git and MUST NOT be edited or 
 <!-- Where we are and what's next — one to three lines.
 This is the resume entry point; the first section an agent reads on cold start. -->
 
-Design gaps from the pre-planning audit have been resolved in `spec.md`/`design.md`; interactive mode now retains fzf selection via selector lines. Next: user confirms the updated design, then fill `tasks.md`.
+Implementation complete and ready for user review. All tasks are marked done; `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo fmt` pass.
 
 ## Key Files
 <!-- Files critical to understanding/continuing this change.
@@ -69,3 +69,4 @@ CLI treats the last valid bullet as the latest milestone.
 - [2026-06-13T18:32+08:00] Reviewed handover/spec/design/tasks and identified design ambiguities that should be aligned before planning or implementation.
 - [2026-06-13T18:45+08:00] Updated spec/design for directory/glob expansion, line-oriented interactive mode, exec enablement, source ordering, and compose template quoting.
 - [2026-06-13T18:50+08:00] Restored fzf as part of interactive mode via Enter-triggered selector lines instead of Tab key capture.
+- [2026-06-13T19:25+08:00] Implemented gather command, tests, docs, and verification; change moved to REVIEW.

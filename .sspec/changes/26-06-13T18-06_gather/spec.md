@@ -1,6 +1,6 @@
 ---
 name: gather
-status: PLANNING
+status: REVIEW
 change-type: single
 created: 2026-06-13T18:06:22
 reference:

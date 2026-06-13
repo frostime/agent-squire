@@ -157,11 +157,15 @@ pub fn print_error(error: &ComposeError, print: PrintMode, cwd: &Path) -> Result
     Ok(())
 }
 
-fn temp_output_path() -> Result<PathBuf> {
+pub(crate) fn temp_output_path_with_prefix(prefix: &str) -> Result<PathBuf> {
     let dir = std::env::temp_dir().join("agent-temp");
     fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
     let timestamp = Local::now().format("%Y%m%dT%H%M%S");
-    Ok(dir.join(format!("asq-compose-{timestamp}-{}.md", Uuid::new_v4())))
+    Ok(dir.join(format!("{prefix}-{timestamp}-{}.md", Uuid::new_v4())))
+}
+
+fn temp_output_path() -> Result<PathBuf> {
+    temp_output_path_with_prefix("asq-compose")
 }
 
 // Compose output is always UTF-8 without BOM. Write through a sibling tempfile so

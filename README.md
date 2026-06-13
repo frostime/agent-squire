@@ -37,6 +37,7 @@ Agent Squire packages small, predictable local tools behind one CLI:
 | `read-range` | `range` | Read known 1-based line ranges from one text file. |
 | `patch-edit` | `patch` | Apply SEARCH/REPLACE patch blocks. |
 | `compose` | — | Render agent context templates into bounded UTF-8 output. |
+| `gather` | — | Assemble files, trees, globs, and command output into one prompt. |
 | `imgweb` | — | Start a local web UI for composing multi-image prompts. |
 | `now` | — | Print the current local date and time. |
 | `list` | — | List built-in commands. |
@@ -161,6 +162,44 @@ Patch block capabilities:
 - same-file multi-patch overlap detection;
 - atomic writes with newline-style preservation;
 - UTF-8 / UTF-8 BOM / GBK / Windows-1252 decoding fallback.
+
+### Gather prompt context
+
+`gather` assembles files, directory/glob file groups, directory trees, and command output into a fenced prompt body.
+
+```bash
+asq gather file:src/main.rs cmd:"git status --short"
+asq gather --stdout file:src/main.rs:1-80
+asq gather dir:src glob:"tests/*.rs" tree:src
+asq gather -i
+```
+
+Default output is a persistent UTF-8 file under the system temp `agent-temp` directory:
+
+```text
+output: C:\Users\...\Temp\agent-temp\asq-gather-20260613T190000-....md
+```
+
+Source forms:
+
+| Source | Meaning |
+|---|---|
+| `file:path` | Include one file. |
+| `file:path:start-end` | Include an inclusive 1-based line range. |
+| `dir:path` | Recursively expand files into one `DIR` group with nested `FILE` blocks. |
+| `glob:pattern` | Expand matching files into one `GLOB` group with nested `FILE` blocks. |
+| `tree:path` | Include a compact directory structure. |
+| `cmd:command` | Capture command stdout. |
+
+Interactive mode keeps path selection terminal-native:
+
+```text
+gather> file:   # opens fzf file selection
+gather> dir:    # opens fzf directory selection
+gather> tree:   # opens fzf directory selection
+gather> cmd:git status --short
+gather> Ctrl+D  # render
+```
 
 ### Compose multi-image prompts
 

@@ -108,6 +108,12 @@ pub enum CliCommand {
     Compose(builtins::compose::ComposeArgs),
 
     #[command(
+        name = "gather",
+        about = "Assemble files, trees, globs, and command output into one prompt"
+    )]
+    Gather(builtins::gather::GatherArgs),
+
+    #[command(
         name = "imgweb",
         about = "Start a local web UI for composing multi-image prompts"
     )]
@@ -174,6 +180,7 @@ fn try_main() -> Result<u8> {
         CliCommand::ReadRange(args) => builtins::read_range::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
         CliCommand::Compose(args) => builtins::compose::run(args, &ctx),
+        CliCommand::Gather(args) => builtins::gather::run(args, &ctx),
         CliCommand::ImgWeb(args) => builtins::imgweb::run(args, &ctx),
         CliCommand::Now(_) => builtins::now::run(&ctx),
         CliCommand::List(_) => run_list(&ctx),

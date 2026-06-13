@@ -225,8 +225,12 @@ fn read_patch_text_from_editor() -> Result<Option<String>> {
     };
 
     let temp_dir = std::env::temp_dir().join("asq-temp");
-    fs::create_dir_all(&temp_dir)
-        .with_context(|| format!("failed to create temporary directory {}", temp_dir.display()))?;
+    fs::create_dir_all(&temp_dir).with_context(|| {
+        format!(
+            "failed to create temporary directory {}",
+            temp_dir.display()
+        )
+    })?;
     let timestamp = Local::now().format("%Y%m%dT%H%M%S");
     let path = temp_dir.join(format!("patch-{timestamp}.md"));
     std::fs::write(&path, "")
