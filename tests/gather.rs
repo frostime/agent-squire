@@ -139,6 +139,56 @@ fn gather_glob_expands_to_grouped_file_blocks() {
 }
 
 #[test]
+fn gather_no_gitignore_includes_ignored_dir_files() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/a.rs"), "alpha\n").unwrap();
+    fs::write(dir.path().join("src/ignored.rs"), "ignored\n").unwrap();
+    fs::write(dir.path().join(".gitignore"), "src/ignored.rs\n").unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "dir:src"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("src/ignored.rs").not());
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "--no-gitignore", "dir:src"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("src/ignored.rs"))
+        .stdout(predicate::str::contains("ignored"));
+}
+
+#[test]
+fn gather_interactive_done_renders_and_exit_aborts() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.txt"), "alpha\n").unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "-i"])
+        .write_stdin("file:a.txt\n/done\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alpha"));
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "-i"])
+        .write_stdin("file:a.txt\n/exit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alpha").not());
+}
+
+#[test]
 fn gather_tree_renders_structure_without_exec_requirement() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("src")).unwrap();

@@ -12,7 +12,7 @@ const ALWAYS_SKIP: &[&str] = &[
     ".mypy_cache",
 ];
 
-pub fn expand_dir(cwd: &Path, path: &Path) -> Result<Vec<PathBuf>> {
+pub fn expand_dir(cwd: &Path, path: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
     let root = resolve_path(cwd, path);
     if !root.is_dir() {
         bail!("Directory not found: {}", path.display());
@@ -21,11 +21,14 @@ pub fn expand_dir(cwd: &Path, path: &Path) -> Result<Vec<PathBuf>> {
     let mut walker = WalkBuilder::new(&root);
     walker
         .hidden(false)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
+        .git_ignore(respect_gitignore)
+        .git_global(respect_gitignore)
+        .git_exclude(respect_gitignore)
         .sort_by_file_name(|a, b| a.cmp(b));
-    walker.filter_entry(|entry| {
+    walker.filter_entry(move |entry| {
+        if !respect_gitignore {
+            return true;
+        }
         let name = entry.file_name().to_str().unwrap_or("");
         !ALWAYS_SKIP.contains(&name)
     });
@@ -64,13 +67,13 @@ pub fn expand_glob(cwd: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-pub fn render_tree(cwd: &Path, path: &Path) -> Result<String> {
+pub fn render_tree(cwd: &Path, path: &Path, respect_gitignore: bool) -> Result<String> {
     let root = resolve_path(cwd, path);
     if !root.is_dir() {
         bail!("Directory not found: {}", path.display());
     }
 
-    let files = expand_dir(cwd, path)?;
+    let files = expand_dir(cwd, path, respect_gitignore)?;
     let root_label = path.display().to_string();
     let mut out = String::new();
     out.push_str(&root_label);
@@ -87,19 +90,22 @@ pub fn render_tree(cwd: &Path, path: &Path) -> Result<String> {
     Ok(out)
 }
 
-pub fn fzf_files(cwd: &Path) -> Result<Vec<PathBuf>> {
-    expand_dir(cwd, Path::new("."))
+pub fn fzf_files(cwd: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
+    expand_dir(cwd, Path::new("."), respect_gitignore)
 }
 
-pub fn fzf_dirs(cwd: &Path) -> Result<Vec<PathBuf>> {
+pub fn fzf_dirs(cwd: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
     let mut walker = WalkBuilder::new(cwd);
     walker
         .hidden(false)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
+        .git_ignore(respect_gitignore)
+        .git_global(respect_gitignore)
+        .git_exclude(respect_gitignore)
         .sort_by_file_name(|a, b| a.cmp(b));
-    walker.filter_entry(|entry| {
+    walker.filter_entry(move |entry| {
+        if !respect_gitignore {
+            return true;
+        }
         let name = entry.file_name().to_str().unwrap_or("");
         !ALWAYS_SKIP.contains(&name)
     });
@@ -154,8 +160,23 @@ mod tests {
         fs::write(dir.path().join("src/b.rs"), "b").unwrap();
         fs::write(dir.path().join(".gitignore"), "src/b.rs\n").unwrap();
 
-        let files = expand_dir(dir.path(), Path::new("src")).unwrap();
+        let files = expand_dir(dir.path(), Path::new("src"), true).unwrap();
         assert_eq!(files, vec![PathBuf::from("src/a.rs")]);
+    }
+
+    #[test]
+    fn no_gitignore_includes_ignored_files() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/a.rs"), "a").unwrap();
+        fs::write(dir.path().join("src/b.rs"), "b").unwrap();
+        fs::write(dir.path().join(".gitignore"), "src/b.rs\n").unwrap();
+
+        let files = expand_dir(dir.path(), Path::new("src"), false).unwrap();
+        assert_eq!(
+            files,
+            vec![PathBuf::from("src/a.rs"), PathBuf::from("src/b.rs")]
+        );
     }
 
     #[test]

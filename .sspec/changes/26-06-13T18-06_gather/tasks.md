@@ -43,6 +43,14 @@ updated: "2026-06-13T19:00+08:00"
 - [x] Run formatter and full project checks.
 **Verification**: `cargo fmt`, `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings` pass.
 
+### Feedback Tasks (→ [001-interactive-controls](./revisions/001-interactive-controls.md)) ✅
+- [x] Add `--no-gitignore` to `src/builtins/gather/mod.rs` and thread ignore behavior through source expansion and interactive fzf candidates.
+- [x] Add interactive internal commands in `src/builtins/gather/interactive.rs`: `/help`, `/list`, `/done`, `/exit`, `/all`, and literal `^D` as done.
+- [x] Update fzf candidate functions in `src/builtins/gather/sources.rs` to support ignored-file inclusion.
+- [x] Add/update tests for interactive command parsing, ignored-file expansion, and `--no-gitignore` behavior.
+- [x] Update `README.md` and `CHANGELOG.md` for interactive commands and ignored-file controls.
+**Verification**: `cargo test gather:: --lib`, `cargo test --test gather`, `cargo fmt`, `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings` pass.
+
 ---
 
 ## Progress
@@ -56,8 +64,11 @@ updated: "2026-06-13T19:00+08:00"
 | Phase 3 | 100% | ✅ |
 | Phase 4 | 100% | ✅ |
 | Phase 5 | 100% | ✅ |
+| Feedback 001 | 100% | ✅ |
 
 **Recent**:
 - [2026-06-13T19:00+08:00] Planned implementation phases.
 - [2026-06-13T19:10+08:00] Implemented gather CLI skeleton, parser, template generation, source expansion, and unit tests; `cargo test gather:: --lib` passes.
 - [2026-06-13T19:25+08:00] Implemented compose integration, interactive fzf selector mode, docs, and integration tests; `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo fmt` pass.
+- [2026-06-13T19:28+08:00] Accepted review feedback as revision 001 and added feedback tasks for interactive controls.
+- [2026-06-13T19:38+08:00] Completed revision 001 interactive controls; all project verification commands pass.

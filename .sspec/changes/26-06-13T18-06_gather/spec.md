@@ -7,6 +7,9 @@ reference:
   - source: ".sspec/tmp/26-06-13T17-30_clarify_files-to-prompt.md"
     type: "doc"
     note: "Clarify notes for gather command"
+  - source: ".sspec/changes/26-06-13T18-06_gather/revisions/001-interactive-controls.md"
+    type: "revision"
+    note: "Interactive commands and ignored-file selection controls"
 ---
 
 # gather

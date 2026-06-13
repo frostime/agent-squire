@@ -5,7 +5,11 @@ use anyhow::Result;
 use super::model::{LineRange, Source};
 use super::sources::{expand_dir, expand_glob, render_tree};
 
-pub fn generate_template(sources: &[Source], cwd: &Path) -> Result<(String, bool)> {
+pub fn generate_template(
+    sources: &[Source],
+    cwd: &Path,
+    respect_gitignore: bool,
+) -> Result<(String, bool)> {
     let mut out = String::new();
     let mut requires_exec = false;
 
@@ -13,7 +17,7 @@ pub fn generate_template(sources: &[Source], cwd: &Path) -> Result<(String, bool
         if index > 0 {
             out.push_str("\n\n");
         }
-        let (segment, exec) = generate_segment(source, cwd)?;
+        let (segment, exec) = generate_segment(source, cwd, respect_gitignore)?;
         requires_exec |= exec;
         out.push_str(&segment);
     }
@@ -21,15 +25,27 @@ pub fn generate_template(sources: &[Source], cwd: &Path) -> Result<(String, bool
     Ok((out, requires_exec))
 }
 
-fn generate_segment(source: &Source, cwd: &Path) -> Result<(String, bool)> {
+fn generate_segment(
+    source: &Source,
+    cwd: &Path,
+    respect_gitignore: bool,
+) -> Result<(String, bool)> {
     match source {
         Source::File { path, range } => Ok((file_block(path, *range), false)),
         Source::Dir { path } => Ok((
-            group_block("DIR", &display_path(path), expand_dir(cwd, path)?),
+            group_block(
+                "DIR",
+                &display_path(path),
+                expand_dir(cwd, path, respect_gitignore)?,
+            ),
             false,
         )),
         Source::Tree { path } => Ok((
-            literal_block("TREE", &display_path(path), &render_tree(cwd, path)?),
+            literal_block(
+                "TREE",
+                &display_path(path),
+                &render_tree(cwd, path, respect_gitignore)?,
+            ),
             false,
         )),
         Source::Glob { pattern } => Ok((
@@ -115,7 +131,7 @@ mod tests {
             path: PathBuf::from("weird}}name.rs"),
             range: Some(LineRange { start: 2, end: 4 }),
         };
-        let (template, exec) = generate_template(&[source], Path::new(".")).unwrap();
+        let (template, exec) = generate_template(&[source], Path::new("."), true).unwrap();
         assert!(!exec);
         assert!(template.contains(r#"${{file: "weird}}name.rs" |> lines: 2-4}}"#));
     }
@@ -129,7 +145,7 @@ mod tests {
         let source = Source::Dir {
             path: PathBuf::from("src"),
         };
-        let (template, _) = generate_template(&[source], dir.path()).unwrap();
+        let (template, _) = generate_template(&[source], dir.path(), true).unwrap();
         assert!(template.contains("====== DIR-START: src ======"));
         assert!(template.contains("Matched files:\n- src/a.rs"));
         assert!(template.contains("====== FILE-START: src/a.rs ======"));
@@ -140,7 +156,7 @@ mod tests {
         let source = Source::Command {
             command: "printf 'a |> b'".into(),
         };
-        let (template, exec) = generate_template(&[source], Path::new(".")).unwrap();
+        let (template, exec) = generate_template(&[source], Path::new("."), true).unwrap();
         assert!(exec);
         assert!(template.contains(r#"${{exec: "printf 'a |> b'"}}"#));
     }

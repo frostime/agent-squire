@@ -40,6 +40,7 @@ const GATHER_PROMPT: &str = r#"# Squire gather guide
 ```bash
 asq gather file:src/main.rs cmd:"git status" 
 asq gather --stdout file:src/main.rs:1-80
+asq gather --no-gitignore dir:target
 asq gather -i
 ```
 
@@ -57,13 +58,15 @@ output: C:\Users\...\Temp\agent-temp\asq-gather-<timestamp>-<uuid>.md
 - `tree:path` renders directory structure
 - `glob:pattern` expands files into one GLOB group
 - `cmd:command` captures command stdout
+- `--no-gitignore` includes gitignored files in dir expansion and fzf candidates
 
 ## Interactive mode
 
 - `file:`, `dir:`, `tree:`, `glob:` open fzf selectors.
 - `prefix:body` adds an explicit source.
-- `cmd:` prompts for one command body line.
-- Ctrl+D finishes and renders.
+- `/help`, `/list`, `/done`, `/exit`, `/all` are interactive commands.
+- `/all` toggles gitignored fzf candidates for the current session.
+- Real EOF or literal `^D` finishes and renders.
 
 ## Output format
 
@@ -77,7 +80,7 @@ output: C:\Users\...\Temp\agent-temp\asq-gather-<timestamp>-<uuid>.md
 #[derive(Args, Debug)]
 #[command(
     long_about = "Gather files, directory/glob file groups, trees, and command output into one prompt body. By default, rendered content is written to a persistent file under the system temp agent-temp directory; use --stdout for pipeline mode.",
-    after_help = "Examples:\n  asq gather file:src/main.rs cmd:\"git status\"\n  asq gather --stdout file:src/main.rs:1-80\n  asq gather -i"
+    after_help = "Examples:\n  asq gather file:src/main.rs cmd:\"git status\"\n  asq gather --stdout file:src/main.rs:1-80\n  asq gather --no-gitignore dir:target\n  asq gather -i"
 )]
 pub struct GatherArgs {
     #[arg(
@@ -179,6 +182,13 @@ pub struct GatherArgs {
     pub max_spill_bytes: usize,
 
     #[arg(
+        long = "no-gitignore",
+        help_heading = "Selection",
+        help = "Include files normally hidden by .gitignore in dir expansion and interactive fzf candidates"
+    )]
+    pub no_gitignore: bool,
+
+    #[arg(
         long,
         help_heading = "Inspection",
         help = "Print the agent-facing gather guide"
@@ -225,12 +235,14 @@ pub fn run(args: GatherArgs, ctx: &CommandContext) -> Result<u8> {
     }
 
     let target = resolve_target(args.stdout, args.output.clone())?;
-    let sources = collect_sources(&args, &ctx.cwd)?;
+    let Some(sources) = collect_sources(&args, &ctx.cwd)? else {
+        return Ok(0);
+    };
     if sources.is_empty() {
         bail!("No sources specified");
     }
 
-    let (template_text, requires_exec) = generate_template(&sources, &ctx.cwd)?;
+    let (template_text, requires_exec) = generate_template(&sources, &ctx.cwd, !args.no_gitignore)?;
     let template =
         match parse_template(&template_text).and_then(|template| compile_template(&template)) {
             Ok(program) => program,
@@ -274,11 +286,15 @@ pub fn run(args: GatherArgs, ctx: &CommandContext) -> Result<u8> {
     }
 }
 
-fn collect_sources(args: &GatherArgs, cwd: &Path) -> Result<Vec<Source>> {
+fn collect_sources(args: &GatherArgs, cwd: &Path) -> Result<Option<Vec<Source>>> {
     let mut sources = Vec::new();
 
     if args.interactive {
-        sources.extend(interactive::read_sources(cwd)?);
+        let result = interactive::read_sources(cwd, !args.no_gitignore)?;
+        if !result.render {
+            return Ok(None);
+        }
+        sources.extend(result.sources);
     }
 
     for source in &args.sources {
@@ -303,7 +319,7 @@ fn collect_sources(args: &GatherArgs, cwd: &Path) -> Result<Vec<Source>> {
             .map(|command| Source::Command { command }),
     );
 
-    Ok(sources)
+    Ok(Some(sources))
 }
 
 fn resolve_target(stdout: bool, output: Option<PathBuf>) -> Result<OutputTarget> {

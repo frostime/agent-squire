@@ -172,6 +172,7 @@ asq gather file:src/main.rs cmd:"git status --short"
 asq gather --stdout file:src/main.rs:1-80
 asq gather dir:src glob:"tests/*.rs" tree:src
 asq gather -i
+asq gather --no-gitignore dir:target
 ```
 
 Default output is a persistent UTF-8 file under the system temp `agent-temp` directory:
@@ -191,14 +192,18 @@ Source forms:
 | `tree:path` | Include a compact directory structure. |
 | `cmd:command` | Capture command stdout. |
 
+Use `--no-gitignore` when directory expansion or interactive selectors should include files normally hidden by `.gitignore`.
+
 Interactive mode keeps path selection terminal-native:
 
 ```text
 gather> file:   # opens fzf file selection
 gather> dir:    # opens fzf directory selection
 gather> tree:   # opens fzf directory selection
-gather> cmd:git status --short
-gather> Ctrl+D  # render
+gather> /all    # toggle gitignored fzf candidates
+gather> /list   # show selected sources
+gather> /done   # render
+gather> /exit   # quit without rendering
 ```
 
 ### Compose multi-image prompts
