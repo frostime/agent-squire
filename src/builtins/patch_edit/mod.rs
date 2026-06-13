@@ -6,10 +6,12 @@ mod parse;
 mod text;
 
 use std::env;
+use std::fs;
 use std::io::{self as stdio, BufRead, IsTerminal, Write};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
+use chrono::Local;
 use clap::Args;
 
 use crate::builtins::patch_edit::io::read_target_text_with_encoding;
@@ -222,11 +224,11 @@ fn read_patch_text_from_editor() -> Result<Option<String>> {
         return Ok(None);
     };
 
-    let temp_dir = tempfile::Builder::new()
-        .prefix("asq-patch-")
-        .tempdir()
-        .context("failed to create temporary patch directory")?;
-    let path = temp_dir.path().join("patch.patch");
+    let temp_dir = std::env::temp_dir().join("asq-temp");
+    fs::create_dir_all(&temp_dir)
+        .with_context(|| format!("failed to create temporary directory {}", temp_dir.display()))?;
+    let timestamp = Local::now().format("%Y%m%dT%H%M%S");
+    let path = temp_dir.join(format!("patch-{timestamp}.md"));
     std::fs::write(&path, "")
         .with_context(|| format!("failed to create temporary patch file {}", path.display()))?;
 
