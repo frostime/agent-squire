@@ -59,6 +59,14 @@ updated: "2026-06-13T19:00+08:00"
 - [x] Update docs for `edit>` confirmation.
 **Verification**: `cargo test gather:: --lib`, `cargo test --test gather`, `cargo fmt`, `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings` pass.
 
+### Feedback Tasks (→ [003-grouped-fence-clarity](./revisions/003-grouped-fence-clarity.md)) ✅
+- [x] Render nested `dir:` file blocks as `DIR-FILE-START/END` while preserving top-level `FILE-START/END`.
+- [x] Render nested `glob:` and fzf-selected glob file blocks as `GLOB-FILE-START/END`.
+- [x] Polish interactive `/help`, startup hints, `/all` status, and `edit>` guidance.
+- [x] Update tests, README, CHANGELOG, and package version to `0.8.0`.
+- [x] Run full verification.
+**Verification**: `cargo fmt`, `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings` pass.
+
 ---
 
 ## Progress
@@ -74,6 +82,7 @@ updated: "2026-06-13T19:00+08:00"
 | Phase 5 | 100% | ✅ |
 | Feedback 001 | 100% | ✅ |
 | Feedback 002 | 100% | ✅ |
+| Feedback 003 | 100% | ✅ |
 
 **Recent**:
 - [2026-06-13T19:00+08:00] Planned implementation phases.
@@ -83,3 +92,5 @@ updated: "2026-06-13T19:00+08:00"
 - [2026-06-13T19:38+08:00] Completed revision 001 interactive controls; all project verification commands pass.
 - [2026-06-13T19:45+08:00] Accepted review feedback as revision 002 for editable fzf selections.
 - [2026-06-13T19:55+08:00] Completed revision 002 editable fzf selections; all project verification commands pass.
+- [2026-06-13T20:05+08:00] Accepted review feedback as revision 003 for grouped fence clarity, interactive polish, and version bump.
+- [2026-06-13T20:12+08:00] Completed revision 003; grouped fences now use parent-qualified names, interactive help is clearer, and version is `0.8.0`.

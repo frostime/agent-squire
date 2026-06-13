@@ -111,7 +111,7 @@ fn gather_dir_expands_to_grouped_file_blocks() {
         .stdout(predicate::str::contains("Matched files:"))
         .stdout(predicate::str::contains("- src/a.rs"))
         .stdout(predicate::str::contains(
-            "====== FILE-START: src/a.rs ======",
+            "====== DIR-FILE-START: src/a.rs ======",
         ))
         .stdout(predicate::str::contains("alpha"))
         .stdout(predicate::str::contains("====== DIR-END ======"));
@@ -134,6 +134,9 @@ fn gather_glob_expands_to_grouped_file_blocks() {
             "====== GLOB-START: src/*.rs ======",
         ))
         .stdout(predicate::str::contains("- src/a.rs"))
+        .stdout(predicate::str::contains(
+            "====== GLOB-FILE-START: src/a.rs ======",
+        ))
         .stdout(predicate::str::contains("alpha"))
         .stdout(predicate::str::contains("ignored").not());
 }

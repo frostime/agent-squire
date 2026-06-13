@@ -80,12 +80,20 @@ fn group_block(kind: &str, label: &str, files: Vec<PathBuf>) -> String {
         }
         for file in files {
             out.push('\n');
-            out.push_str(&file_block(&file, None));
+            out.push_str(&group_file_block(kind, &file));
             out.push('\n');
         }
     }
     out.push_str(&format!("====== {kind}-END ======"));
     out
+}
+
+fn group_file_block(kind: &str, path: &Path) -> String {
+    format!(
+        "====== {kind}-FILE-START: {} ======\n${{{{file: {}}}}}\n====== {kind}-FILE-END ======",
+        display_path(path),
+        quote_compose_body(&display_path(path))
+    )
 }
 
 fn file_block(path: &Path, range: Option<LineRange>) -> String {
@@ -148,7 +156,9 @@ mod tests {
         let (template, _) = generate_template(&[source], dir.path(), true).unwrap();
         assert!(template.contains("====== DIR-START: src ======"));
         assert!(template.contains("Matched files:\n- src/a.rs"));
-        assert!(template.contains("====== FILE-START: src/a.rs ======"));
+        assert!(template.contains("====== DIR-FILE-START: src/a.rs ======"));
+        assert!(template.contains("====== DIR-FILE-END ======"));
+        assert!(!template.contains("====== FILE-START: src/a.rs ======"));
     }
 
     #[test]

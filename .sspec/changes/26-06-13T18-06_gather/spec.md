@@ -13,6 +13,9 @@ reference:
   - source: ".sspec/changes/26-06-13T18-06_gather/revisions/002-editable-fzf-selection.md"
     type: "revision"
     note: "Editable confirmation for fzf-selected sources"
+  - source: ".sspec/changes/26-06-13T18-06_gather/revisions/003-grouped-fence-clarity.md"
+    type: "revision"
+    note: "Clarify grouped file fences and polish interactive help"
 ---
 
 # gather

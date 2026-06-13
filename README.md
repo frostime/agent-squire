@@ -187,12 +187,14 @@ Source forms:
 |---|---|
 | `file:path` | Include one file. |
 | `file:path:start-end` | Include an inclusive 1-based line range. |
-| `dir:path` | Recursively expand files into one `DIR` group with nested `FILE` blocks. |
-| `glob:pattern` | Expand matching files into one `GLOB` group with nested `FILE` blocks. |
+| `dir:path` | Recursively expand files into one `DIR` group with nested `DIR-FILE` blocks. |
+| `glob:pattern` | Expand matching files into one `GLOB` group with nested `GLOB-FILE` blocks. |
 | `tree:path` | Include a compact directory structure. |
 | `cmd:command` | Capture command stdout. |
 
 Use `--no-gitignore` when directory expansion or interactive selectors should include files normally hidden by `.gitignore`.
+
+Grouped output uses parent-qualified inner fences (`DIR-FILE-START`, `GLOB-FILE-START`) so expanded files are visually distinct from top-level `FILE` sources.
 
 Interactive mode keeps path selection terminal-native:
 

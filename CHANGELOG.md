@@ -6,12 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.8.0] — 2026-06-13
+
 ### Added
 
 - **`gather` command** — assembles files, line ranges, directory/glob file groups, trees, and command output into one fenced prompt body.
   - Supports positional and named `file`, `dir`, `tree`, `glob`, and `cmd` sources.
   - Writes to `%TEMP%/agent-temp` by default with `asq-gather-*` names, with `--stdout` and `--output` modes.
   - Includes interactive fzf selector lines with editable `edit>` confirmation, `/help`/`/list`/`/done`/`/exit`/`/all` controls, and `--no-gitignore` for ignored-file selection.
+  - Uses parent-qualified nested fences (`DIR-FILE-*`, `GLOB-FILE-*`) for expanded grouped files.
 - **`compose` command** — renders agent context templates into UTF-8 output.
   - Supports `stdin`, `file`, `env`, and guarded `exec` sources with `${{...}}` interpolation.
   - Writes rendered bodies to `%TEMP%/agent-temp` by default, with `--stdout` for pipeline mode.

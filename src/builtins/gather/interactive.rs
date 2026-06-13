@@ -28,6 +28,7 @@ pub fn read_sources(cwd: &Path, respect_gitignore: bool) -> Result<InteractiveRe
     let mut sources = Vec::new();
     let mut respect_gitignore = respect_gitignore;
     let stdin = io::stdin();
+    println!("Interactive gather. Type /help for commands, /done to render, /exit to quit.");
 
     loop {
         print!("gather> ");
@@ -63,7 +64,7 @@ pub fn read_sources(cwd: &Path, respect_gitignore: bool) -> Result<InteractiveRe
                     } else {
                         "including gitignored files"
                     };
-                    println!("  selection mode: {mode}");
+                    println!("  fzf selection now {mode}");
                 }
             }
             continue;
@@ -265,10 +266,22 @@ fn run_fzf(choices: &[PathBuf]) -> Result<Vec<PathBuf>> {
 
 fn print_interactive_help() {
     println!(
-        "commands: /help /list /done /exit /all\n\
-         sources: file:path file:path:start-end dir:path tree:path glob:pattern cmd:command\n\
-         selectors: file: dir: tree: glob: open fzf, then edit> confirms the source\n\
-         /all toggles gitignored candidates"
+        "Commands:\n\
+           /help        show this help\n\
+           /list        show selected sources\n\
+           /done        render selected sources\n\
+           /exit        quit without rendering\n\
+           /all         toggle gitignored fzf candidates\n\
+         Sources:\n\
+           file:path\n\
+           file:path:start-end\n\
+           dir:path\n\
+           tree:path\n\
+           glob:pattern\n\
+           cmd:command\n\
+         Selectors:\n\
+           file: dir: tree: glob: open fzf; selected paths open edit> for confirmation\n\
+           In edit>, press Enter to accept, edit text to add ranges, or clear to skip"
     );
 }
 
