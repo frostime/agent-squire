@@ -1,9 +1,9 @@
-mod compile;
-mod model;
+pub(crate) mod compile;
+pub(crate) mod model;
 mod modifiers;
-mod output;
-mod parser;
-mod render;
+pub(crate) mod output;
+pub(crate) mod parser;
+pub(crate) mod render;
 mod sources;
 mod text;
 
