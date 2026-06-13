@@ -197,13 +197,17 @@ Use `--no-gitignore` when directory expansion or interactive selectors should in
 Interactive mode keeps path selection terminal-native:
 
 ```text
-gather> file:   # opens fzf file selection
-gather> dir:    # opens fzf directory selection
-gather> tree:   # opens fzf directory selection
+gather> file:   # opens fzf file selection, then edit> file:path allows adding :start-end
+gather> dir:    # opens fzf directory selection, then edit> dir:path
+gather> tree:   # opens fzf directory selection, then edit> tree:path
 gather> /all    # toggle gitignored fzf candidates
 gather> /list   # show selected sources
 gather> /done   # render
 gather> /exit   # quit without rendering
+
+# after fzf selection:
+edit> file:src/main.rs        # press Enter to accept
+edit> file:src/main.rs:10-20  # or edit before accepting
 ```
 
 ### Compose multi-image prompts

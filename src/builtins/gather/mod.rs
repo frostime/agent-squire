@@ -62,7 +62,7 @@ output: C:\Users\...\Temp\agent-temp\asq-gather-<timestamp>-<uuid>.md
 
 ## Interactive mode
 
-- `file:`, `dir:`, `tree:`, `glob:` open fzf selectors.
+- `file:`, `dir:`, `tree:`, `glob:` open fzf selectors, then `edit>` lets you confirm or edit the source line.
 - `prefix:body` adds an explicit source.
 - `/help`, `/list`, `/done`, `/exit`, `/all` are interactive commands.
 - `/all` toggles gitignored fzf candidates for the current session.

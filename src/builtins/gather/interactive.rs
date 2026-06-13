@@ -1,8 +1,10 @@
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 
 use super::model::{Prefix, Source};
 use super::parser::{command_body_prefix, parse_source, selector_prefix};
@@ -22,7 +24,7 @@ pub enum InteractiveCommand {
     ToggleAll,
 }
 
-pub fn read_sources(cwd: &std::path::Path, respect_gitignore: bool) -> Result<InteractiveResult> {
+pub fn read_sources(cwd: &Path, respect_gitignore: bool) -> Result<InteractiveResult> {
     let mut sources = Vec::new();
     let mut respect_gitignore = respect_gitignore;
     let stdin = io::stdin();
@@ -118,11 +120,7 @@ pub fn parse_interactive_command(line: &str) -> Option<InteractiveCommand> {
     }
 }
 
-pub fn select_with_fzf(
-    prefix: Prefix,
-    cwd: &std::path::Path,
-    respect_gitignore: bool,
-) -> Result<Vec<Source>> {
+pub fn select_with_fzf(prefix: Prefix, cwd: &Path, respect_gitignore: bool) -> Result<Vec<Source>> {
     let choices = match prefix {
         Prefix::File | Prefix::Glob => fzf_files(cwd, respect_gitignore)?,
         Prefix::Dir | Prefix::Tree => fzf_dirs(cwd, respect_gitignore)?,
@@ -132,10 +130,96 @@ pub fn select_with_fzf(
         "fzf is required for interactive selection. Enter explicit prefix:path sources instead.",
     )?;
 
-    Ok(sources_from_selected_paths(prefix, selected))
+    edit_selected_sources(prefix, selected, cwd)
 }
 
-fn sources_from_selected_paths(prefix: Prefix, selected: Vec<PathBuf>) -> Vec<Source> {
+fn edit_selected_sources(
+    prefix: Prefix,
+    selected: Vec<PathBuf>,
+    cwd: &Path,
+) -> Result<Vec<Source>> {
+    if selected.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    if prefix == Prefix::Glob {
+        return edit_grouped_glob_selection(selected, cwd);
+    }
+
+    let total = selected.len();
+    let mut sources = Vec::new();
+    for (index, path) in selected.into_iter().enumerate() {
+        let initial = default_source_line(prefix, &path);
+        let prompt = if total == 1 {
+            "edit> ".to_string()
+        } else {
+            format!("edit {}/{}> ", index + 1, total)
+        };
+        let Some(edited) = read_prefilled_line(&prompt, &initial)? else {
+            continue;
+        };
+        match parse_edited_source(&edited, cwd) {
+            Ok(source) => sources.push(source),
+            Err(err) => eprintln!("error: {err}. Skipped: {edited}"),
+        }
+    }
+    Ok(sources)
+}
+
+fn edit_grouped_glob_selection(selected: Vec<PathBuf>, cwd: &Path) -> Result<Vec<Source>> {
+    let initial = "glob:fzf selection";
+    let Some(edited) = read_prefilled_line("edit> ", initial)? else {
+        return Ok(Vec::new());
+    };
+    if edited == initial {
+        return Ok(vec![Source::SelectedGlob {
+            label: "fzf selection".into(),
+            files: selected,
+        }]);
+    }
+    Ok(vec![parse_edited_source(&edited, cwd)?])
+}
+
+fn read_prefilled_line(prompt: &str, initial: &str) -> Result<Option<String>> {
+    let mut editor = DefaultEditor::new().context("failed to initialize line editor")?;
+    match editor.readline_with_initial(prompt, (initial, "")) {
+        Ok(line) => {
+            let line = line.trim().to_string();
+            Ok((!line.is_empty()).then_some(line))
+        }
+        Err(ReadlineError::Eof | ReadlineError::Interrupted) => Ok(None),
+        Err(err) => Err(err).context("failed to read edited source line"),
+    }
+}
+
+fn parse_edited_source(line: &str, cwd: &Path) -> Result<Source> {
+    parse_source(line, cwd)
+}
+
+fn default_source_line(prefix: Prefix, path: &Path) -> String {
+    let path = path.display().to_string().replace('\\', "/");
+    match prefix {
+        Prefix::File => format!("file:{path}"),
+        Prefix::Dir => format!("dir:{path}"),
+        Prefix::Tree => format!("tree:{path}"),
+        Prefix::Glob => format!("glob:{path}"),
+        Prefix::Cmd => format!("cmd:{path}"),
+    }
+}
+
+#[cfg(test)]
+pub fn sources_from_fzf_lines(prefix: Prefix, lines: &str) -> Vec<Source> {
+    let selected: Vec<PathBuf> = lines
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(PathBuf::from)
+        .collect();
+    sources_from_selected_paths_for_tests(prefix, selected)
+}
+
+#[cfg(test)]
+fn sources_from_selected_paths_for_tests(prefix: Prefix, selected: Vec<PathBuf>) -> Vec<Source> {
     match prefix {
         Prefix::File => selected
             .into_iter()
@@ -155,17 +239,6 @@ fn sources_from_selected_paths(prefix: Prefix, selected: Vec<PathBuf>) -> Vec<So
         }],
         Prefix::Cmd => Vec::new(),
     }
-}
-
-#[cfg(test)]
-pub fn sources_from_fzf_lines(prefix: Prefix, lines: &str) -> Vec<Source> {
-    let selected: Vec<PathBuf> = lines
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(PathBuf::from)
-        .collect();
-    sources_from_selected_paths(prefix, selected)
 }
 
 fn run_fzf(choices: &[PathBuf]) -> Result<Vec<PathBuf>> {
@@ -194,7 +267,8 @@ fn print_interactive_help() {
     println!(
         "commands: /help /list /done /exit /all\n\
          sources: file:path file:path:start-end dir:path tree:path glob:pattern cmd:command\n\
-         selectors: file: dir: tree: glob: open fzf; /all toggles gitignored candidates"
+         selectors: file: dir: tree: glob: open fzf, then edit> confirms the source\n\
+         /all toggles gitignored candidates"
     );
 }
 
@@ -245,6 +319,30 @@ mod tests {
             Some(InteractiveCommand::ToggleAll)
         );
         assert_eq!(parse_interactive_command("file:"), None);
+    }
+
+    #[test]
+    fn default_source_line_uses_selected_path() {
+        assert_eq!(
+            default_source_line(Prefix::File, Path::new("src/main.rs")),
+            "file:src/main.rs"
+        );
+        assert_eq!(
+            default_source_line(Prefix::Tree, Path::new("src")),
+            "tree:src"
+        );
+    }
+
+    #[test]
+    fn edited_file_source_can_add_range() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+
+        let source = parse_edited_source("file:src/main.rs:10-20", dir.path()).unwrap();
+        assert!(
+            matches!(source, Source::File { range: Some(range), .. } if range.start == 10 && range.end == 20)
+        );
     }
 
     #[test]

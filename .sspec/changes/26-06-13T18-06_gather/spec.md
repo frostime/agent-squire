@@ -10,6 +10,9 @@ reference:
   - source: ".sspec/changes/26-06-13T18-06_gather/revisions/001-interactive-controls.md"
     type: "revision"
     note: "Interactive commands and ignored-file selection controls"
+  - source: ".sspec/changes/26-06-13T18-06_gather/revisions/002-editable-fzf-selection.md"
+    type: "revision"
+    note: "Editable confirmation for fzf-selected sources"
 ---
 
 # gather

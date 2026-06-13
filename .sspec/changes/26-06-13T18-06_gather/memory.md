@@ -1,6 +1,6 @@
 # Memory: gather
 
-**Updated**: 2026-06-13T19:38+08:00
+**Updated**: 2026-06-13T19:55+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -21,7 +21,7 @@ This section records the change starting point in git and MUST NOT be edited or 
 <!-- Where we are and what's next — one to three lines.
 This is the resume entry point; the first section an agent reads on cold start. -->
 
-Revision 001 implementation complete and ready for user review. All tasks are marked done; `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo fmt` pass.
+Revision 002 implementation complete and ready for user review. All tasks are marked done; `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo fmt` pass.
 
 ## Key Files
 <!-- Files critical to understanding/continuing this change.
@@ -62,6 +62,7 @@ Obsolete items → mark [obsolete: timestamp], never silently delete. -->
 - [2026-06-13T18:45+08:00] [Decision] Generated compose source bodies are JSON-string-quoted so user-provided paths/commands are data, not compose template syntax.
 - [2026-06-13T18:50+08:00] [Decision] Interactive MVP keeps fzf selection without raw Tab handling: selector-only lines (`file:`, `dir:`, `tree:`, `glob:`) open fzf; explicit `prefix:body` remains supported.
 - [2026-06-13T19:38+08:00] [Decision] Interactive controls use `/done` to render, `/exit` to quit without rendering, `/all` to toggle gitignored fzf candidates, and literal `^D` as `/done`; CLI `--no-gitignore` applies to dir expansion and fzf candidates.
+- [2026-06-13T19:55+08:00] [Decision] FZF selected paths pass through an editable `edit>` confirmation backed by `rustyline`; edited text is parsed through existing gather source syntax so ranges like `file:path:10-20` work after selection.
 
 ## Milestones
 <!-- MUST append one line per session. Pure facts; new entries appended at the end.
@@ -72,3 +73,4 @@ CLI treats the last valid bullet as the latest milestone.
 - [2026-06-13T18:50+08:00] Restored fzf as part of interactive mode via Enter-triggered selector lines instead of Tab key capture.
 - [2026-06-13T19:25+08:00] Implemented gather command, tests, docs, and verification; change moved to REVIEW.
 - [2026-06-13T19:38+08:00] Implemented revision 001 interactive controls and moved change back to REVIEW.
+- [2026-06-13T19:55+08:00] Implemented revision 002 editable fzf selection and moved change back to REVIEW.

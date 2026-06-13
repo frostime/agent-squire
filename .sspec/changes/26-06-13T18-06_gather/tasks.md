@@ -51,6 +51,14 @@ updated: "2026-06-13T19:00+08:00"
 - [x] Update `README.md` and `CHANGELOG.md` for interactive commands and ignored-file controls.
 **Verification**: `cargo test gather:: --lib`, `cargo test --test gather`, `cargo fmt`, `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings` pass.
 
+### Feedback Tasks (→ [002-editable-fzf-selection](./revisions/002-editable-fzf-selection.md)) ✅
+- [x] Add a line editor dependency and keep it isolated inside `src/builtins/gather/interactive.rs`.
+- [x] Route fzf-selected paths through editable `edit>` confirmation before adding sources.
+- [x] Parse edited source lines through existing `parse_source` so file ranges work after selection.
+- [x] Add tests for default fzf source line generation and edited source parsing.
+- [x] Update docs for `edit>` confirmation.
+**Verification**: `cargo test gather:: --lib`, `cargo test --test gather`, `cargo fmt`, `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings` pass.
+
 ---
 
 ## Progress
@@ -65,6 +73,7 @@ updated: "2026-06-13T19:00+08:00"
 | Phase 4 | 100% | ✅ |
 | Phase 5 | 100% | ✅ |
 | Feedback 001 | 100% | ✅ |
+| Feedback 002 | 100% | ✅ |
 
 **Recent**:
 - [2026-06-13T19:00+08:00] Planned implementation phases.
@@ -72,3 +81,5 @@ updated: "2026-06-13T19:00+08:00"
 - [2026-06-13T19:25+08:00] Implemented compose integration, interactive fzf selector mode, docs, and integration tests; `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo fmt` pass.
 - [2026-06-13T19:28+08:00] Accepted review feedback as revision 001 and added feedback tasks for interactive controls.
 - [2026-06-13T19:38+08:00] Completed revision 001 interactive controls; all project verification commands pass.
+- [2026-06-13T19:45+08:00] Accepted review feedback as revision 002 for editable fzf selections.
+- [2026-06-13T19:55+08:00] Completed revision 002 editable fzf selections; all project verification commands pass.
