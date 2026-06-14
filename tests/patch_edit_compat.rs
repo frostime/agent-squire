@@ -1,22 +1,32 @@
 use std::fs;
 
-use agent_squire::builtins::patch_edit::apply_patches;
+use agent_squire::builtins::patch_edit::{
+    PatchApplyOptions, apply_patches, apply_patches_with_options,
+};
 use tempfile::tempdir;
+
+fn smart() -> PatchApplyOptions {
+    PatchApplyOptions {
+        dry_run: false,
+        smart_indent: true,
+    }
+}
 
 #[test]
 fn applies_exact_search_patch() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "hello\nworld\n").unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-hello
-=======
-hi
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "hello\n",
+        "=======\n",
+        "hi\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert_eq!(results.len(), 1);
     assert!(results[0].success);
     assert_eq!(results[0].status, "applied");
@@ -32,15 +42,16 @@ fn dry_run_does_not_write() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "hello\n").unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-hello
-=======
-hi
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "hello\n",
+        "=======\n",
+        "hi\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), true, false);
+    let results = apply_patches(patch, dir.path(), true);
     assert!(results[0].success);
     assert_eq!(
         fs::read_to_string(dir.path().join("a.txt")).unwrap(),
@@ -53,15 +64,16 @@ fn detects_already_applied() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "hi\nworld\n").unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-hello
-=======
-hi
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "hello\n",
+        "=======\n",
+        "hi\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert!(results[0].success);
     assert_eq!(results[0].status, "already_applied");
     assert_eq!(results[0].match_line, Some(1));
@@ -72,15 +84,16 @@ fn loose_match_ignores_trailing_spaces() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "alpha   \n").unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-alpha
-=======
-beta
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "alpha\n",
+        "=======\n",
+        "beta\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert!(results[0].success);
     assert_eq!(results[0].match_mode.as_deref(), Some("loose"));
     assert_eq!(
@@ -94,15 +107,16 @@ fn line_range_limits_scope() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "x\nsame\nx\nsame\n").unwrap();
 
-    let patch = r#"# a.txt:L4-L4
-<<<<<<< SEARCH
-same
-=======
-other
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt:L4-L4\n",
+        "<<<<<<< SEARCH\n",
+        "same\n",
+        "=======\n",
+        "other\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert!(results[0].success);
     assert_eq!(results[0].match_line, Some(4));
     assert_eq!(
@@ -116,15 +130,16 @@ fn ambiguous_search_fails() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "same\nx\nsame\n").unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-same
-=======
-other
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "same\n",
+        "=======\n",
+        "other\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert!(!results[0].success);
     assert_eq!(results[0].status, "search_ambiguous");
     assert_eq!(results[0].related_lines.as_ref().unwrap(), &vec![1, 3]);
@@ -134,21 +149,22 @@ other
 fn create_new_file_and_detect_existing_identical() {
     let dir = tempdir().unwrap();
 
-    let patch = r#"# new.txt
-<<<<<<< CREATE
-=======
-hello
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# new.txt\n",
+        "<<<<<<< CREATE\n",
+        "=======\n",
+        "hello\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert!(results[0].success);
     assert_eq!(
         fs::read_to_string(dir.path().join("new.txt")).unwrap(),
         "hello\n"
     );
 
-    let again = apply_patches(patch, dir.path(), false, false);
+    let again = apply_patches(patch, dir.path(), false);
     assert!(again[0].success);
     assert_eq!(again[0].status, "already_applied");
 }
@@ -158,14 +174,15 @@ fn overwrite_no_change() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "hello\n").unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< OVERWRITE
-=======
-hello
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< OVERWRITE\n",
+        "=======\n",
+        "hello\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert!(results[0].success);
     assert_eq!(results[0].status, "no_change_patch");
 }
@@ -175,22 +192,22 @@ fn same_file_batch_uses_original_content_then_splices_backwards() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "one\ntwo\nthree\n").unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-one
-=======
-ONE
->>>>>>> REPLACE
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "one\n",
+        "=======\n",
+        "ONE\n",
+        ">>>>>>> REPLACE\n\n",
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "two\n",
+        "=======\n",
+        "TWO\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-# a.txt
-<<<<<<< SEARCH
-two
-=======
-TWO
->>>>>>> REPLACE
-"#;
-
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert_eq!(results.len(), 2);
     assert!(results.iter().all(|r| r.success));
     assert_eq!(
@@ -204,26 +221,26 @@ fn same_file_overlap_conflict_rejects_all_overlapping_matches() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "a\nb\nc\n").unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-a
-b
-=======
-A
-B
->>>>>>> REPLACE
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "a\n",
+        "b\n",
+        "=======\n",
+        "A\n",
+        "B\n",
+        ">>>>>>> REPLACE\n\n",
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "b\n",
+        "c\n",
+        "=======\n",
+        "B\n",
+        "C\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-# a.txt
-<<<<<<< SEARCH
-b
-c
-=======
-B
-C
->>>>>>> REPLACE
-"#;
-
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert_eq!(results.len(), 2);
     assert!(results.iter().all(|r| !r.success));
     assert!(results.iter().all(|r| r.status == "overlap_conflict"));
@@ -233,31 +250,33 @@ C
     );
 }
 
-// --- Smart indent tests ---
-
 #[test]
-fn indent_mismatch_without_flag() {
+fn smart_indent_reports_unique_candidate_without_flag() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.txt"), "    fn foo() {\n        content\n    }\n").unwrap();
+    fs::write(
+        dir.path().join("a.txt"),
+        "    fn foo() {\n        content\n    }\n",
+    )
+    .unwrap();
 
-    // Search block missing the 4-space indent
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-fn foo() {
-    content
-}
-=======
-fn bar() {
-    new_content
-}
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "fn foo() {\n",
+        "    content\n",
+        "}\n",
+        "=======\n",
+        "fn bar() {\n",
+        "    new_content\n",
+        "}\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches(patch, dir.path(), false);
     assert!(!results[0].success);
     assert_eq!(results[0].status, "indent_mismatch");
-    assert_eq!(results[0].indent_delta.as_deref(), Some("    "));
-    // File unchanged
+    assert_eq!(results[0].indent_from.as_deref(), Some(""));
+    assert_eq!(results[0].indent_to.as_deref(), Some("    "));
     assert_eq!(
         fs::read_to_string(dir.path().join("a.txt")).unwrap(),
         "    fn foo() {\n        content\n    }\n"
@@ -265,29 +284,33 @@ fn bar() {
 }
 
 #[test]
-fn smart_indent_applies_with_adjustment() {
+fn smart_indent_applies_missing_outer_indent() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.txt"), "    fn foo() {\n        content\n    }\n").unwrap();
+    fs::write(
+        dir.path().join("a.txt"),
+        "    fn foo() {\n        content\n    }\n",
+    )
+    .unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-fn foo() {
-    content
-}
-=======
-fn bar() {
-    new_content
-}
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "fn foo() {\n",
+        "    content\n",
+        "}\n",
+        "=======\n",
+        "fn bar() {\n",
+        "    new_content\n",
+        "}\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, true);
+    let results = apply_patches_with_options(patch, dir.path(), smart());
     assert!(results[0].success);
     assert_eq!(results[0].status, "applied");
     assert_eq!(results[0].match_mode.as_deref(), Some("indent_shift"));
-    assert_eq!(results[0].match_line, Some(1));
-    assert_eq!(results[0].indent_delta.as_deref(), Some("    "));
-    // Replace lines get the 4-space indent prepended
+    assert_eq!(results[0].indent_from.as_deref(), Some(""));
+    assert_eq!(results[0].indent_to.as_deref(), Some("    "));
     assert_eq!(
         fs::read_to_string(dir.path().join("a.txt")).unwrap(),
         "    fn bar() {\n        new_content\n    }\n"
@@ -295,155 +318,172 @@ fn bar() {
 }
 
 #[test]
-fn smart_indent_empty_lines_preserved() {
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.txt"), "    fn foo() {\n\n    }\n").unwrap();
-
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-fn foo() {
-
-}
-=======
-fn bar() {
-
-}
->>>>>>> REPLACE
-"#;
-
-    let results = apply_patches(patch, dir.path(), false, true);
-    assert!(results[0].success);
-    assert_eq!(results[0].match_mode.as_deref(), Some("indent_shift"));
-    // Empty lines in search should match empty lines in file,
-    // and empty lines in replace should NOT get indent added
-    assert_eq!(
-        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
-        "    fn bar() {\n\n    }\n"
-    );
-}
-
-#[test]
-fn smart_indent_tab_prefix() {
-    let dir = tempdir().unwrap();
-    // All lines have a single tab prefix relative to search content
-    fs::write(dir.path().join("a.txt"), "\tfn foo() {\n\tbar\n\t}\n").unwrap();
-
-    // Search without any leading tabs — indent_shift should detect tab delta
-    let patch = "# a.txt\n<<<<<<< SEARCH\nfn foo() {\nbar\n}\n=======\nfn baz() {\nqux\n}\n>>>>>>> REPLACE\n";
-
-    let results = apply_patches(patch, dir.path(), false, true);
-    assert!(results[0].success, "expected success, got: {:?}", results[0].error);
-    assert_eq!(results[0].match_mode.as_deref(), Some("indent_shift"));
-    // Tab prefix applied to replace lines
-    assert_eq!(
-        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
-        "\tfn baz() {\n\tqux\n\t}\n"
-    );
-}
-
-#[test]
-fn search_indent_ambiguous() {
-    let dir = tempdir().unwrap();
-    // File has two identical blocks at same indent level
-    fs::write(dir.path().join("a.txt"), "    fn foo() {\n    }\n    fn foo() {\n    }\n").unwrap();
-
-    // Search missing indent: "fn foo() {\n}" matches both blocks with "    " delta
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-fn foo() {
-}
-=======
-bar
->>>>>>> REPLACE
-"#;
-
-    let results = apply_patches(patch, dir.path(), false, false);
-    assert!(!results[0].success);
-    assert_eq!(results[0].status, "search_indent_ambiguous");
-}
-
-#[test]
-fn smart_indent_no_delta_needed() {
+fn smart_indent_can_reduce_base_indent() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "fn foo() {\n    content\n}\n").unwrap();
 
-    // Search already has correct indentation
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-fn foo() {
-    content
-}
-=======
-fn bar() {
-    new_content
-}
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "        fn foo() {\n",
+        "            content\n",
+        "        }\n",
+        "=======\n",
+        "        fn bar() {\n",
+        "            new_content\n",
+        "        }\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, true);
-    // Should use exact match, not indent_shift
-    assert!(results[0].success);
-    assert_eq!(results[0].match_mode.as_deref(), Some("exact"));
-    assert_eq!(results[0].indent_delta, None);
+    let results = apply_patches_with_options(patch, dir.path(), smart());
+    assert!(results[0].success, "{:?}", results[0].error);
+    assert_eq!(results[0].indent_from.as_deref(), Some("        "));
+    assert_eq!(results[0].indent_to.as_deref(), Some(""));
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "fn bar() {\n    new_content\n}\n"
+    );
 }
 
 #[test]
-fn smart_indent_mixed_whitespace_no_common() {
+fn smart_indent_preserves_deep_yaml_relative_indent() {
     let dir = tempdir().unwrap();
-    // File has tab+space mixed indent across lines that can't have a consistent delta
-    fs::write(dir.path().join("a.txt"), "\tfn foo() {\n        bar\n\t}\n").unwrap();
+    fs::write(
+        dir.path().join("a.yml"),
+        "root:\n          key:\n            child: old\n",
+    )
+    .unwrap();
 
-    // Search without any indent — the file has tab on line 1 but spaces on line 2
-    // After adding tab delta: \tfn foo() matches \tfn foo() but \tbar doesn't match \t\tbar (need 2 tabs)
-    // After adding space delta: spaces+fn doesn't match \tfn (tab vs space)
-    // So no consistent delta exists
-    let patch = "# a.txt\n<<<<<<< SEARCH\nfn foo() {\nbar\n}\n=======\nbaz\n>>>>>>> REPLACE\n";
+    let patch = concat!(
+        "# a.yml\n",
+        "<<<<<<< SEARCH\n",
+        "      key:\n",
+        "        child: old\n",
+        "=======\n",
+        "      key:\n",
+        "        child: new\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, true);
-    // No consistent delta can make all lines match
+    let results = apply_patches_with_options(patch, dir.path(), smart());
+    assert!(results[0].success, "{:?}", results[0].error);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.yml")).unwrap(),
+        "root:\n          key:\n            child: new\n"
+    );
+}
+
+#[test]
+fn smart_indent_blank_search_line_does_not_match_non_blank_target_line() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("a.txt"),
+        "    fn foo() {\n    unexpected\n    }\n",
+    )
+    .unwrap();
+
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "fn foo() {\n",
+        "\n",
+        "}\n",
+        "=======\n",
+        "fn bar() {\n",
+        "\n",
+        "}\n",
+        ">>>>>>> REPLACE\n",
+    );
+
+    let results = apply_patches_with_options(patch, dir.path(), smart());
     assert!(!results[0].success);
     assert_eq!(results[0].status, "search_not_found");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "    fn foo() {\n    unexpected\n    }\n"
+    );
 }
 
 #[test]
-fn search_indent_ambiguous_with_flag() {
+fn smart_indent_multiple_candidates_are_ambiguous() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.txt"), "    fn foo() {\n    }\n    fn foo() {\n    }\n").unwrap();
+    fs::write(
+        dir.path().join("a.txt"),
+        "    fn foo() {\n    }\n        fn foo() {\n        }\n",
+    )
+    .unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-fn foo() {
-}
-=======
-bar
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "fn foo() {\n",
+        "}\n",
+        "=======\n",
+        "fn bar() {\n",
+        "}\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, false);
+    let results = apply_patches_with_options(patch, dir.path(), smart());
     assert!(!results[0].success);
     assert_eq!(results[0].status, "search_indent_ambiguous");
+    assert_eq!(results[0].related_lines.as_ref().unwrap(), &vec![1, 3]);
 }
 
 #[test]
-fn smart_indent_preserves_existing_match_priority() {
+fn smart_indent_rejects_incompatible_replace_indent() {
     let dir = tempdir().unwrap();
-    // When exact match exists, should not use indent_shift
-    fs::write(dir.path().join("a.txt"), "fn foo() {\n    x\n}\n    fn foo() {\n        y\n    }\n").unwrap();
+    fs::write(dir.path().join("a.txt"), "fn foo() {\n    content\n}\n").unwrap();
 
-    let patch = r#"# a.txt
-<<<<<<< SEARCH
-fn foo() {
-    x
-}
-=======
-fn bar() {
-    z
-}
->>>>>>> REPLACE
-"#;
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "    fn foo() {\n",
+        "        content\n",
+        "    }\n",
+        "=======\n",
+        "fn bar() {\n",
+        "    new_content\n",
+        "}\n",
+        ">>>>>>> REPLACE\n",
+    );
 
-    let results = apply_patches(patch, dir.path(), false, true);
-    assert!(results[0].success);
-    // Should use exact, not indent_shift
-    assert_eq!(results[0].match_mode.as_deref(), Some("exact"));
+    let results = apply_patches_with_options(patch, dir.path(), smart());
+    assert!(!results[0].success);
+    assert_eq!(results[0].status, "replace_indent_incompatible");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "fn foo() {\n    content\n}\n"
+    );
+}
+
+#[test]
+fn smart_indent_is_idempotent() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("a.txt"),
+        "    fn foo() {\n        content\n    }\n",
+    )
+    .unwrap();
+
+    let patch = concat!(
+        "# a.txt\n",
+        "<<<<<<< SEARCH\n",
+        "fn foo() {\n",
+        "    content\n",
+        "}\n",
+        "=======\n",
+        "fn bar() {\n",
+        "    new_content\n",
+        "}\n",
+        ">>>>>>> REPLACE\n",
+    );
+
+    let first = apply_patches_with_options(patch, dir.path(), smart());
+    assert_eq!(first[0].status, "applied");
+
+    let second = apply_patches_with_options(patch, dir.path(), smart());
+    assert!(second[0].success);
+    assert_eq!(second[0].status, "already_applied");
+    assert_eq!(second[0].match_mode.as_deref(), Some("indent_shift"));
 }

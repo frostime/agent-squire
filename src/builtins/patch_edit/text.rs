@@ -72,19 +72,69 @@ pub fn norm_line_loose(line: &str) -> String {
     }
 }
 
-/// Prepend `delta` to each line that has non-empty content
-/// (after stripping line endings). Empty lines are left unchanged.
-pub fn adjust_line_indent(lines: &[String], delta: &str) -> Vec<String> {
+pub fn is_blank_line(line: &str) -> bool {
+    strip_line_ending(line)
+        .chars()
+        .all(|c| c == ' ' || c == '\t')
+}
+
+pub fn common_base_indent(lines: &[String]) -> String {
+    let mut common: Option<String> = None;
+
+    for line in lines.iter().filter(|line| !is_blank_line(line)) {
+        let indent = leading_whitespace(strip_line_ending(line));
+        common = Some(match common {
+            None => indent.to_string(),
+            Some(prev) => common_prefix(&prev, indent).to_string(),
+        });
+    }
+
+    common.unwrap_or_default()
+}
+
+pub fn strip_base_indent(lines: &[String], base: &str) -> Option<Vec<String>> {
+    lines
+        .iter()
+        .map(|line| strip_base_indent_line(line, base))
+        .collect()
+}
+
+pub fn migrate_base_indent(lines: &[String], from: &str, to: &str) -> Option<Vec<String>> {
     lines
         .iter()
         .map(|line| {
-            let stripped = strip_line_ending(line);
-            if stripped.is_empty() {
-                line.clone()
+            if is_blank_line(line) {
+                Some(line.clone())
             } else {
-                let ending = &line[stripped.len()..];
-                format!("{delta}{stripped}{ending}")
+                strip_base_indent_line(line, from).map(|stripped| format!("{to}{stripped}"))
             }
         })
         .collect()
+}
+
+fn strip_base_indent_line(line: &str, base: &str) -> Option<String> {
+    if is_blank_line(line) {
+        Some(line.to_string())
+    } else {
+        line.strip_prefix(base).map(ToString::to_string)
+    }
+}
+
+fn leading_whitespace(line: &str) -> &str {
+    let end = line
+        .char_indices()
+        .find_map(|(idx, ch)| (ch != ' ' && ch != '\t').then_some(idx))
+        .unwrap_or(line.len());
+    &line[..end]
+}
+
+fn common_prefix<'a>(a: &'a str, b: &str) -> &'a str {
+    let mut end = 0usize;
+    for ((a_idx, a_ch), (_, b_ch)) in a.char_indices().zip(b.char_indices()) {
+        if a_ch != b_ch {
+            break;
+        }
+        end = a_idx + a_ch.len_utf8();
+    }
+    &a[..end]
 }

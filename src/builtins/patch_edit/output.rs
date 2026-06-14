@@ -53,6 +53,13 @@ pub fn print_compact(results: &[PatchApplyResult], dry_run: bool) {
                 let mode = result.match_mode.as_deref().unwrap_or("-");
                 note = format!("{note} ({mode} @L{line})");
             }
+            if let (Some(from), Some(to)) = (&result.indent_from, &result.indent_to) {
+                note = format!(
+                    "{note}, indent {} -> {}",
+                    format_indent(from),
+                    format_indent(to)
+                );
+            }
             println!("{status} {:<18} {} -- {}", result.status, header, note);
         } else {
             println!(
@@ -67,6 +74,22 @@ pub fn print_compact(results: &[PatchApplyResult], dry_run: bool) {
         println!("[OK] All patches succeeded.");
     } else {
         println!("[X] {failed} patch(es) failed.");
+    }
+}
+
+fn format_indent(indent: &str) -> String {
+    if indent.is_empty() {
+        return "0 spaces".into();
+    }
+
+    let spaces = indent.chars().filter(|c| *c == ' ').count();
+    let tabs = indent.chars().filter(|c| *c == '\t').count();
+    match (spaces, tabs) {
+        (0, 1) => "1 tab".into(),
+        (0, n) => format!("{n} tabs"),
+        (1, 0) => "1 space".into(),
+        (n, 0) => format!("{n} spaces"),
+        _ => format!("{:?}", indent),
     }
 }
 

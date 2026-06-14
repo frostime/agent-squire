@@ -19,8 +19,11 @@ use crate::cli::CommandContext;
 use crate::runtime::input;
 use crate::runtime::output::PrintMode;
 
-pub use match_apply::{apply_parsed_patches, apply_patches};
-pub use model::{PatchApplyResult, PatchBlock, PatchOperation};
+pub use match_apply::{
+    apply_parsed_patches, apply_parsed_patches_with_options, apply_patches,
+    apply_patches_with_options,
+};
+pub use model::{PatchApplyOptions, PatchApplyResult, PatchBlock, PatchOperation};
 pub use parse::parse_patches;
 
 const PATCH_PROMPT: &str = r#"# Squire patch-edit format
@@ -167,8 +170,20 @@ pub fn run(args: PatchEditArgs, ctx: &CommandContext) -> Result<u8> {
     run_once(&patch_text, args.dry_run, args.smart_indent, ctx)
 }
 
-fn run_once(patch_text: &str, dry_run: bool, smart_indent: bool, ctx: &CommandContext) -> Result<u8> {
-    let results = apply_patches(patch_text, &ctx.cwd, dry_run, smart_indent);
+fn run_once(
+    patch_text: &str,
+    dry_run: bool,
+    smart_indent: bool,
+    ctx: &CommandContext,
+) -> Result<u8> {
+    let results = apply_patches_with_options(
+        patch_text,
+        &ctx.cwd,
+        PatchApplyOptions {
+            dry_run,
+            smart_indent,
+        },
+    );
     let all_success = results.iter().all(|r| r.success);
 
     match ctx.print {
@@ -187,7 +202,14 @@ fn run_interactive(dry_run_only: bool, smart_indent: bool, ctx: &CommandContext)
     }
 
     eprintln!("Dry-run preview:");
-    let preview_results = apply_patches(&patch_text, &ctx.cwd, true, smart_indent);
+    let preview_results = apply_patches_with_options(
+        &patch_text,
+        &ctx.cwd,
+        PatchApplyOptions {
+            dry_run: true,
+            smart_indent,
+        },
+    );
     let preview_success = preview_results.iter().all(|r| r.success);
     match ctx.print {
         PrintMode::Json => output::print_json(&preview_results, true)?,

@@ -1,42 +1,59 @@
 ---
 name: smart-indent
-status: DOING
+status: REVIEW
 change-type: single
 created: 2026-06-14T22:54:10
-reference: null
+reference:
+  - source: ".sspec/changes/26-06-14T22-54_smart-indent/revisions/001-redefine-smart-indent.md"
+    type: "revision"
+    note: "Redefine smart-indent as block base-indent migration."
 ---
 
 # smart-indent
 
 ## Problem Statement
 
-`asq patch` 的 SEARCH 块因缩进差异匹配失败时，统一返回 `search_not_found`。用户无法区分"内容对但缩进前缀统一缺少"和"内容完全对不上"——前者是可修复的，后者才是真正的匹配失败。
+`asq patch-edit` fails with `search_not_found` when a SEARCH block has the correct relative content but a different base indentation level than the target file. This is common for agent-written patches in deeply nested formats such as YAML or nested code blocks, where counting exact leading spaces is error-prone.
+
+The current failure gives no actionable distinction between "content is wrong" and "content matches after shifting the whole block's indent level".
 
 ## Proposed Solution
 
 ### Approach
 
-在现有匹配链路（exact → loose）之后增加一级 indent-shift 匹配：提取 search 串各非空行的公共空白前缀作为 `indent_delta`，去除后重新匹配。不加 `--smart-indent` 时，匹配结果以 `indent_mismatch` / `search_indent_ambiguous` 报错并附 indent_delta 信息；加 `--smart-indent` 时自动修正匹配并对 replace 内容做对应缩进调整。
+Add a smart-indent matching stage after existing exact/loose matching. Smart-indent treats SEARCH and each candidate target window as blocks with their own base indent:
+
+```text
+indent_from = common leading whitespace prefix of SEARCH non-empty lines
+indent_to   = common leading whitespace prefix of TARGET candidate non-empty lines
+
+strip(indent_from, SEARCH) == strip(indent_to, TARGET candidate)
+```
+
+Default mode remains strict for writes: it does not apply smart-indent automatically. It only performs a diagnostic probe so users get `indent_mismatch` or `search_indent_ambiguous` instead of a generic `search_not_found`. With `--smart-indent`, exactly one smart-indent candidate is applied by migrating REPLACE from `indent_from` to `indent_to`.
+
+This design supports both adding and removing base indentation; it does not assume `indent_to` is longer than `indent_from`.
 
 ### Key Change
 
-- **Feat: indent-shift 匹配逻辑** — `match_apply.rs` 中 `find_preferred_matches` 之后增加 `find_indent_matches`，计算公共前缀并尝试去除后匹配；返回新状态 `indent_mismatch` / `search_indent_ambiguous` / `indent_shift`
-- **Feat: `--smart-indent` CLI flag** — `PatchEditArgs` 增加 `smart_indent: bool`，传入 `apply_patches` → `match_patch`；启用时 `indent_shift` 匹配成功，replace 内容加 `indent_delta`
-- **Feat: replace 缩进调整** — 匹配成功后对 replace 各行（含空行）右移 `indent_delta`
-- **Feat: `indent_delta` 字段** — `PatchMatch` 和 `PatchApplyResult` 增加 `indent_delta: Option<String>`，JSON 输出可见
-- **Feat: 错误提示含缩进前缀** — `indent_mismatch` 错误消息展示缺少的缩进前缀（可读 repr），提示使用 `--smart-indent`
-- **Refactor: 空行处理** — indent-shift 匹配时空行不参与公共前缀计算，匹配时空行视为匹配任意缩进的行
+- **Feat: smart-indent candidate detection** — add a matching stage that compares SEARCH and target windows after stripping each side's common non-empty-line indent.
+- **Feat: strict-by-default diagnostic** — without `--smart-indent`, unique smart-indent match returns `indent_mismatch`; multiple smart-indent matches return `search_indent_ambiguous`; no smart match preserves `search_not_found`.
+- **Feat: `--smart-indent` apply mode** — with `--smart-indent`, exactly one smart-indent candidate applies the patch using `match_mode: "indent_shift"`.
+- **Feat: REPLACE indent migration** — migrate every non-empty REPLACE line from `indent_from` to `indent_to`; reject incompatible REPLACE lines with `replace_indent_incompatible`.
+- **Feat: smart-indent idempotency** — with `--smart-indent`, detect already-applied state using the adjusted REPLACE content.
+- **Feat: structured indent metadata** — expose `indent_from` and `indent_to` in match/apply results instead of a single `indent_delta` string.
+- **Compat: options-based Rust API** — preserve the existing public `apply_patches(patch_text, project_root, dry_run)` API and add an options-based entrypoint for smart-indent.
 
 ### Scope Summary
 
 | File | Change |
 |------|--------|
-| `src/builtins/patch_edit/model.rs` | `PatchMatch` + `PatchApplyResult` 加 `indent_delta` 字段 |
-| `src/builtins/patch_edit/text.rs` | 新增 `compute_common_indent_prefix` + `adjust_line_indent` |
-| `src/builtins/patch_edit/match_apply.rs` | `find_indent_matches` + 修改 `match_patch` 链路 + replace 缩进调整 |
-| `src/builtins/patch_edit/mod.rs` | CLI `--smart-indent` flag + thread 到调用链 |
-| `src/builtins/patch_edit/output.rs` | `indent_mismatch` / `search_indent_ambiguous` 输出 |
-| `tests/patch_edit_compat.rs` | 新增 indent-shift 相关集成测试 |
+| `src/builtins/patch_edit/model.rs` | Add options/result metadata for `indent_from` and `indent_to`. |
+| `src/builtins/patch_edit/text.rs` | Add common-indent, strip-base-indent, and migrate-indent helpers. |
+| `src/builtins/patch_edit/match_apply.rs` | Add smart-indent candidate search, ambiguity handling, adjusted REPLACE apply, and adjusted already-applied checks. |
+| `src/builtins/patch_edit/mod.rs` | Add `--smart-indent`; route CLI through options API while preserving old API. |
+| `src/builtins/patch_edit/output.rs` | Ensure compact/JSON output surfaces new statuses and indent metadata clearly. |
+| `tests/patch_edit_compat.rs` | Replace prior smart-indent tests with coverage for base-indent migration, ambiguity, empty lines, idempotency, and API compatibility. |
 
 ### Design Reference
 

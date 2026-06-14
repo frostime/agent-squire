@@ -10,6 +10,12 @@ pub enum PatchOperation {
     Overwrite,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PatchApplyOptions {
+    pub dry_run: bool,
+    pub smart_indent: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PatchBlock {
     #[serde(skip_serializing)]
@@ -34,7 +40,8 @@ pub struct PatchApplyResult {
     pub source_line_start: Option<usize>,
     pub search_line_count: usize,
     pub replace_line_count: usize,
-    pub indent_delta: Option<String>,
+    pub indent_from: Option<String>,
+    pub indent_to: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,5 +56,6 @@ pub struct PatchMatch {
     pub related_lines: Option<Vec<usize>>,
     pub search_line_count: usize,
     pub replace_line_count: usize,
-    pub indent_delta: Option<String>,
+    pub indent_from: Option<String>,
+    pub indent_to: Option<String>,
 }
