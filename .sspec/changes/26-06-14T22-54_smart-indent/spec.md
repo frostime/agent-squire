@@ -1,6 +1,6 @@
 ---
 name: smart-indent
-status: PLANNING
+status: DOING
 change-type: single
 created: 2026-06-14T22:54:10
 reference: null
