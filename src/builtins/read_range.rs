@@ -60,6 +60,13 @@ pub struct ReadRangeArgs {
         help = "Read last N lines (mutually exclusive with --range/--head)"
     )]
     pub tail: Option<usize>,
+
+    #[arg(
+        long = "no-number",
+        default_value = "false",
+        help = "Do not display line numbers in output"
+    )]
+    pub no_number: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -117,6 +124,8 @@ pub fn run(args: ReadRangeArgs, ctx: &CommandContext) -> Result<u8> {
     let has_range = !args.ranges.is_empty();
     let has_head = args.head.is_some();
     let has_tail = args.tail.is_some();
+    let no_number = args.no_number;
+
     let count = [has_range, has_head, has_tail]
         .iter()
         .filter(|&&b| b)
@@ -213,7 +222,7 @@ pub fn run(args: ReadRangeArgs, ctx: &CommandContext) -> Result<u8> {
             for warning in &warnings {
                 eprintln!("warning: {warning}");
             }
-            print_compact(&file, &slices);
+            print_compact(&file, &slices, &no_number);
         }
     }
 
@@ -373,22 +382,31 @@ fn detect_newline(raw: &[u8]) -> String {
     }
 }
 
-fn print_compact(file: &ReadRangeFile, slices: &[ReadRangeSlice]) {
-    println!(
-        "{} \u{2502} {} {} \u{2502} {} lines \u{2502} 1-based",
-        file.path, file.encoding, file.newline, file.line_count
-    );
-    println!();
+fn print_compact(
+    file: &ReadRangeFile,
+    slices: &[ReadRangeSlice],
+    no_number: &bool
+) {
+    // let only_one_slice = slices.len() == 1;
+    // println!(
+    //     "{} \u{2502} {} {} \u{2502} {} lines \u{2502} 1-based",
+    //     file.path, file.encoding, file.newline, file.line_count
+    // );
     for (idx, slice) in slices.iter().enumerate() {
         if idx > 0 {
             println!();
         }
         println!(
-            "@@ {}-{} requested={}",
-            slice.start_line, slice.end_line, slice.request
+            "@@ Range Chunk \u{2502} {}:{}-{} (from-args={}) @@",
+            file.path, slice.start_line, slice.end_line, slice.request
         );
         for (offset, line) in slice.content.split('\n').enumerate() {
-            println!("{:>3} \u{2502} {}", slice.start_line + offset, line);
+            // println!("{:>3} \u{2502} {}", slice.start_line + offset, line);
+            if !no_number {
+                println!("{:>3} \u{2502} {}", slice.start_line + offset, line);
+            } else {
+                println!("{}", line);
+            }
         }
     }
 }
