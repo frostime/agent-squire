@@ -34,6 +34,7 @@ pub struct PatchApplyResult {
     pub source_line_start: Option<usize>,
     pub search_line_count: usize,
     pub replace_line_count: usize,
+    pub indent_delta: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,4 +49,5 @@ pub struct PatchMatch {
     pub related_lines: Option<Vec<usize>>,
     pub search_line_count: usize,
     pub replace_line_count: usize,
+    pub indent_delta: Option<String>,
 }
