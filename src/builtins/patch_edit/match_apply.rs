@@ -6,16 +6,18 @@ use super::io::{TextEncoding, atomic_write_text, read_target_text_with_encoding}
 use super::model::{PatchApplyResult, PatchBlock, PatchMatch, PatchOperation};
 use super::parse::parse_patches;
 use super::text::{
-    convert_newlines, detect_newline_style, norm_line_exact, norm_line_loose, split_lines_keepends,
+    adjust_line_indent, convert_newlines, detect_newline_style, norm_line_exact, norm_line_loose,
+    split_lines_keepends, strip_line_ending,
 };
 
 pub fn apply_patches(
     patch_text: &str,
     project_root: &Path,
     dry_run: bool,
+    smart_indent: bool,
 ) -> Vec<PatchApplyResult> {
     match parse_patches(patch_text, project_root) {
-        Ok(patches) => apply_parsed_patches(&patches, dry_run),
+        Ok(patches) => apply_parsed_patches(&patches, dry_run, smart_indent),
         Err(errors) => errors
             .into_iter()
             .map(|error| PatchApplyResult {
@@ -29,12 +31,17 @@ pub fn apply_patches(
                 source_line_start: None,
                 search_line_count: 0,
                 replace_line_count: 0,
+                indent_delta: None,
             })
             .collect(),
     }
 }
 
-pub fn apply_parsed_patches(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchApplyResult> {
+pub fn apply_parsed_patches(
+    patches: &[PatchBlock],
+    dry_run: bool,
+    smart_indent: bool,
+) -> Vec<PatchApplyResult> {
     let mut indexed_results: Vec<(usize, PatchApplyResult)> = Vec::new();
     let mut file_search_patches: BTreeMap<std::path::PathBuf, Vec<(usize, PatchBlock)>> =
         BTreeMap::new();
@@ -46,20 +53,20 @@ pub fn apply_parsed_patches(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchA
                 .or_default()
                 .push((idx, patch));
         } else {
-            indexed_results.push((idx, apply_patch(&patch, dry_run)));
+            indexed_results.push((idx, apply_patch(&patch, dry_run, smart_indent)));
         }
     }
 
     for (_file_path, indexed_searches) in file_search_patches {
         if indexed_searches.len() == 1 {
             let (idx, patch) = &indexed_searches[0];
-            indexed_results.push((*idx, apply_patch(patch, dry_run)));
+            indexed_results.push((*idx, apply_patch(patch, dry_run, smart_indent)));
         } else {
             let patches = indexed_searches
                 .iter()
                 .map(|(_, p)| p.clone())
                 .collect::<Vec<_>>();
-            let results = apply_search_patches_batch(&patches, dry_run);
+            let results = apply_search_patches_batch(&patches, dry_run, smart_indent);
             for ((idx, _), result) in indexed_searches.into_iter().zip(results) {
                 indexed_results.push((idx, result));
             }
@@ -73,8 +80,8 @@ pub fn apply_parsed_patches(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchA
         .collect()
 }
 
-fn apply_patch(patch: &PatchBlock, dry_run: bool) -> PatchApplyResult {
-    match apply_patch_inner(patch, dry_run) {
+fn apply_patch(patch: &PatchBlock, dry_run: bool, smart_indent: bool) -> PatchApplyResult {
+    match apply_patch_inner(patch, dry_run, smart_indent) {
         Ok(result) => result,
         Err(error) => base_result(
             patch,
@@ -83,11 +90,16 @@ fn apply_patch(patch: &PatchBlock, dry_run: bool) -> PatchApplyResult {
             Some(format!("Failed to apply patch: {error}")),
             0,
             0,
+            None,
         ),
     }
 }
 
-fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchApplyResult> {
+fn apply_patch_inner(
+    patch: &PatchBlock,
+    dry_run: bool,
+    smart_indent: bool,
+) -> anyhow::Result<PatchApplyResult> {
     if patch.operation == PatchOperation::Create {
         let replace_text = convert_newlines(&patch.replace_content, "\n");
         let replace_lines = split_lines_keepends(&replace_text);
@@ -101,6 +113,7 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
                     Some(format!("Not a file: {}", patch.display_path)),
                     0,
                     replace_lines.len(),
+                    None,
                 ));
             }
 
@@ -113,6 +126,7 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
                     Some("CREATE target already exists with identical content".into()),
                     0,
                     replace_lines.len(),
+                    None,
                 ));
             }
 
@@ -123,6 +137,7 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
                 Some("CREATE target already exists with different content".into()),
                 0,
                 replace_lines.len(),
+                None,
             ));
         }
 
@@ -140,6 +155,7 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             None,
             0,
             replace_lines.len(),
+            None,
         ));
     }
 
@@ -151,6 +167,7 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             Some(format!("File does not exist: {}", patch.display_path)),
             0,
             0,
+            None,
         ));
     }
 
@@ -162,6 +179,7 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             Some(format!("Not a file: {}", patch.display_path)),
             0,
             0,
+            None,
         ));
     }
 
@@ -179,6 +197,7 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
                 Some("OVERWRITE would not change the file".into()),
                 0,
                 replace_lines.len(),
+                None,
             ));
         }
 
@@ -193,17 +212,25 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             None,
             0,
             replace_lines.len(),
+            None,
         ));
     }
 
     let file_lines = split_lines_keepends(&content);
-    let matched = match_patch(patch, &file_lines, newline, &content);
+    let matched = match_patch(patch, &file_lines, newline, content.is_empty(), smart_indent);
 
     if matched.status != "matched" {
         return Ok(match_to_result(&matched));
     }
 
     let replace_lines = split_lines_keepends(&convert_newlines(&patch.replace_content, newline));
+    let replace_lines = if matched.match_mode.as_deref() == Some("indent_shift") {
+        let delta = matched.indent_delta.as_deref().unwrap();
+        adjust_line_indent(&replace_lines, delta)
+    } else {
+        replace_lines
+    };
+
     let new_content = file_lines[..matched.abs_start]
         .iter()
         .chain(replace_lines.iter())
@@ -222,13 +249,18 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
         None,
         matched.search_line_count,
         matched.replace_line_count,
+        matched.indent_delta.clone(),
     );
     result.match_mode = matched.match_mode;
     result.match_line = matched.match_line;
     Ok(result)
 }
 
-fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchApplyResult> {
+fn apply_search_patches_batch(
+    patches: &[PatchBlock],
+    dry_run: bool,
+    smart_indent: bool,
+) -> Vec<PatchApplyResult> {
     if patches.is_empty() {
         return vec![];
     }
@@ -246,6 +278,7 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                     Some(format!("File does not exist: {}", p.display_path)),
                     0,
                     0,
+                    None,
                 )
             })
             .collect();
@@ -262,6 +295,7 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                     Some(format!("Not a file: {}", p.display_path)),
                     0,
                     0,
+                    None,
                 )
             })
             .collect();
@@ -272,7 +306,7 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
         Err(error) => {
             return patches
                 .iter()
-                .map(|p| base_result(p, false, "write_error", Some(error.to_string()), 0, 0))
+                .map(|p| base_result(p, false, "write_error", Some(error.to_string()), 0, 0, None))
                 .collect();
         }
     };
@@ -281,7 +315,7 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
     let file_lines = split_lines_keepends(&content);
     let mut matches = patches
         .iter()
-        .map(|p| match_patch(p, &file_lines, newline, &content))
+        .map(|p| match_patch(p, &file_lines, newline, content.is_empty(), smart_indent))
         .collect::<Vec<_>>();
 
     if check_overlap(&matches) {
@@ -311,6 +345,7 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                         Some("Not applied: another patch in the same batch failed".into()),
                         m.search_line_count,
                         m.replace_line_count,
+                        m.indent_delta.clone(),
                     );
                     result.match_mode = m.match_mode.clone();
                     result.match_line = m.match_line;
@@ -333,6 +368,12 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
     for m in &matched {
         let replace_lines =
             split_lines_keepends(&convert_newlines(&m.patch.replace_content, newline));
+        let replace_lines = if m.match_mode.as_deref() == Some("indent_shift") {
+            let delta = m.indent_delta.as_deref().unwrap();
+            adjust_line_indent(&replace_lines, delta)
+        } else {
+            replace_lines
+        };
         new_lines.splice(m.abs_start..m.abs_end, replace_lines);
     }
 
@@ -347,6 +388,7 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                     Some(format!("Failed to apply patch: {error}")),
                     0,
                     0,
+                    None,
                 )
             })
             .collect();
@@ -367,6 +409,7 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                 m.error.clone(),
                 m.search_line_count,
                 m.replace_line_count,
+                m.indent_delta.clone(),
             );
             result.match_mode = m.match_mode.clone();
             result.match_line = m.match_line;
@@ -379,7 +422,8 @@ fn match_patch(
     patch: &PatchBlock,
     file_lines: &[String],
     newline: &str,
-    content: &str,
+    is_empty_file: bool,
+    smart_indent: bool,
 ) -> PatchMatch {
     let search_text = convert_newlines(&patch.search_content, newline);
     let search_lines = split_lines_keepends(&search_text);
@@ -390,7 +434,9 @@ fn match_patch(
                 error: Option<String>,
                 related_lines: Option<Vec<usize>>,
                 match_mode: Option<String>,
-                match_line: Option<usize>| PatchMatch {
+                match_line: Option<usize>,
+                indent_delta: Option<String>|
+     PatchMatch {
         patch: patch.clone(),
         abs_start: 0,
         abs_end: 0,
@@ -401,9 +447,9 @@ fn match_patch(
         related_lines,
         search_line_count: search_lines.len(),
         replace_line_count: replace_lines.len(),
+        indent_delta,
     };
 
-    let is_empty_file = content.is_empty();
     let is_empty_search = search_lines.is_empty();
 
     if is_empty_search && !is_empty_file {
@@ -413,21 +459,23 @@ fn match_patch(
             None,
             None,
             None,
+            None,
         );
     }
 
     if is_empty_search && is_empty_file {
-        if replace_text == content {
+        if replace_text == content_from_file_lines(file_lines) {
             return fail(
                 "no_change_patch",
                 Some("SEARCH is empty and REPLACE would not change the file".into()),
                 None,
                 None,
                 None,
+                None,
             );
         }
 
-        let mut matched = fail("matched", None, None, None, None);
+        let mut matched = fail("matched", None, None, None, None, None);
         matched.abs_start = 0;
         matched.abs_end = 0;
         return matched;
@@ -440,6 +488,7 @@ fn match_patch(
             None,
             None,
             None,
+            None,
         );
     }
 
@@ -447,7 +496,7 @@ fn match_patch(
         let total_lines = file_lines.len();
         let (start, end) = match normalize_line_range(range, total_lines) {
             Ok(v) => v,
-            Err(error) => return fail("invalid_line_range", Some(error), None, None, None),
+            Err(error) => return fail("invalid_line_range", Some(error), None, None, None, None),
         };
 
         let start_idx = start - 1;
@@ -463,6 +512,7 @@ fn match_patch(
                 None,
                 None,
                 None,
+                None,
             );
         }
 
@@ -471,6 +521,7 @@ fn match_patch(
         (0usize, file_lines.to_vec())
     };
 
+    // Try exact, then loose matching
     let (search_matches, search_mode) = find_preferred_matches(&region, &search_lines);
     let (replace_matches, replace_mode) = find_preferred_matches(&region, &replace_lines);
 
@@ -487,6 +538,7 @@ fn match_patch(
             related_lines: None,
             search_line_count: search_lines.len(),
             replace_line_count: replace_lines.len(),
+            indent_delta: None,
         };
     }
 
@@ -506,6 +558,7 @@ fn match_patch(
             Some(related),
             search_mode,
             None,
+            None,
         );
     }
 
@@ -516,6 +569,7 @@ fn match_patch(
             None,
             replace_mode,
             Some(prefix_len + replace_matches[0] + 1),
+            None,
         );
     }
 
@@ -530,6 +584,60 @@ fn match_patch(
             Some(related),
             replace_mode,
             None,
+            None,
+        );
+    }
+
+    // Exact/loose search failed, replace not found. Try indent-shift matching.
+    let (indent_matches, indent_delta) = find_indent_matches(&region, &search_lines);
+
+    if indent_matches.len() == 1 {
+        if smart_indent {
+            let abs_start = prefix_len + indent_matches[0];
+            return PatchMatch {
+                patch: patch.clone(),
+                abs_start,
+                abs_end: abs_start + search_lines.len(),
+                match_mode: Some("indent_shift".into()),
+                match_line: Some(abs_start + 1),
+                status: "matched".into(),
+                error: None,
+                related_lines: None,
+                search_line_count: search_lines.len(),
+                replace_line_count: replace_lines.len(),
+                indent_delta: Some(indent_delta),
+            };
+        } else {
+            let delta_display = format_indent_delta(&indent_delta);
+            return fail(
+                "indent_mismatch",
+                Some(format!(
+                    "SEARCH content matches with indent prefix {} but not as-is. Use --smart-indent to apply with auto-indent",
+                    delta_display
+                )),
+                None,
+                None,
+                None,
+                Some(indent_delta),
+            );
+        }
+    }
+
+    if indent_matches.len() > 1 {
+        let related = indent_matches
+            .iter()
+            .map(|m| prefix_len + *m + 1)
+            .collect();
+        return fail(
+            "search_indent_ambiguous",
+            Some(format!(
+                "SEARCH content matches {} locations with indent adjustment; narrow the line range or fix the indentation",
+                indent_matches.len()
+            )),
+            Some(related),
+            None,
+            None,
+            Some(indent_delta),
         );
     }
 
@@ -539,7 +647,27 @@ fn match_patch(
         None,
         None,
         None,
+        None,
     )
+}
+
+/// Format indent delta for human-readable error messages.
+fn format_indent_delta(delta: &str) -> String {
+    if delta.contains('\t') && delta.contains(' ') {
+        format!("\"{}\"", delta.replace('\t', "\\t"))
+    } else if delta.contains('\t') {
+        let count = delta.len();
+        format!("{} tab{}", count, if count > 1 { "s" } else { "" })
+    } else if delta.contains(' ') {
+        let count = delta.len();
+        format!("{} space{}", count, if count > 1 { "s" } else { "" })
+    } else {
+        format!("\"{}\"", delta)
+    }
+}
+
+fn content_from_file_lines(file_lines: &[String]) -> String {
+    file_lines.concat()
 }
 
 fn normalize_line_range(
@@ -579,6 +707,78 @@ fn find_preferred_matches(region: &[String], needle: &[String]) -> (Vec<usize>, 
     }
 
     (vec![], None)
+}
+
+/// Try to match needle against region by finding a consistent indent delta that
+/// can be prepended to non-empty needle lines to make them match region lines.
+///
+/// For each non-empty needle line j at candidate position i, we require:
+///   delta + needle_stripped[j] == region_stripped[i+j]
+/// where delta is the same for all lines.
+///
+/// Returns (match_positions, indent_delta_string).
+fn find_indent_matches(region: &[String], needle: &[String]) -> (Vec<usize>, String) {
+    if needle.is_empty() || needle.len() > region.len() {
+        return (vec![], String::new());
+    }
+
+    let needle_stripped: Vec<&str> = needle.iter().map(|s| strip_line_ending(s)).collect();
+    let region_stripped: Vec<&str> = region.iter().map(|s| strip_line_ending(s)).collect();
+
+    let mut matches = Vec::new();
+    let mut last_delta = String::new();
+
+    'outer: for i in 0..=(region.len() - needle.len()) {
+        let mut delta: Option<String> = None;
+
+        for j in 0..needle.len() {
+            // Empty needle lines match any region line
+            if needle_stripped[j].is_empty() {
+                // But region line must also be empty-only (just line ending)
+                continue;
+            }
+
+            let region_line = region_stripped[i + j];
+            let needle_line = needle_stripped[j];
+
+            // region must end with needle content, and the prefix is delta
+            if !region_line.ends_with(needle_line) {
+                continue 'outer;
+            }
+
+            let this_delta = &region_line[..region_line.len() - needle_line.len()];
+
+            // delta must be pure whitespace (only spaces/tabs)
+            if !this_delta.is_empty() && !this_delta.chars().all(|c| c == ' ' || c == '\t') {
+                continue 'outer;
+            }
+
+            // delta must be the same for all lines
+            match &delta {
+                None => delta = Some(this_delta.to_string()),
+                Some(prev) => {
+                    if this_delta != prev {
+                        continue 'outer;
+                    }
+                }
+            }
+        }
+
+        let Some(d) = delta else {
+            // All needle lines were empty — no indent shift to detect
+            continue;
+        };
+
+        // Empty delta means exact match (no indent shift needed — skip)
+        if d.is_empty() {
+            continue;
+        }
+
+        matches.push(i);
+        last_delta = d;
+    }
+
+    (matches, last_delta)
 }
 
 fn find_block_matches(region: &[String], needle: &[String], loose: bool) -> Vec<usize> {
@@ -641,6 +841,7 @@ fn match_to_result(m: &PatchMatch) -> PatchApplyResult {
         m.error.clone(),
         m.search_line_count,
         m.replace_line_count,
+        m.indent_delta.clone(),
     );
     result.match_mode = m.match_mode.clone();
     result.match_line = m.match_line;
@@ -655,6 +856,7 @@ fn base_result(
     error: Option<String>,
     search_line_count: usize,
     replace_line_count: usize,
+    indent_delta: Option<String>,
 ) -> PatchApplyResult {
     PatchApplyResult {
         patch: Some(patch.clone()),
@@ -667,5 +869,6 @@ fn base_result(
         source_line_start: Some(patch.source_line_start),
         search_line_count,
         replace_line_count,
+        indent_delta,
     }
 }

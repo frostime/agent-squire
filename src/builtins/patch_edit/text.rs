@@ -71,3 +71,20 @@ pub fn norm_line_loose(line: &str) -> String {
         s.to_string()
     }
 }
+
+/// Prepend `delta` to each line that has non-empty content
+/// (after stripping line endings). Empty lines are left unchanged.
+pub fn adjust_line_indent(lines: &[String], delta: &str) -> Vec<String> {
+    lines
+        .iter()
+        .map(|line| {
+            let stripped = strip_line_ending(line);
+            if stripped.is_empty() {
+                line.clone()
+            } else {
+                let ending = &line[stripped.len()..];
+                format!("{delta}{stripped}{ending}")
+            }
+        })
+        .collect()
+}
