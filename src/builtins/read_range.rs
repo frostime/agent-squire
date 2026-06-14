@@ -9,11 +9,31 @@ use serde::Serialize;
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
+const LONG_ABOUT: &str = r#"Read known 1-based line ranges from one text file.
+
+Use this when an agent already knows the exact line numbers to inspect and needs a cross-platform replacement for `sed -n` / PowerShell line slicing. It does not search text, parse syntax, or find symbols; use `rg`, `md-toc`, or language tooling for discovery first.
+
+Range syntax is 1-based and inclusive:
+  N        one line
+  A-B      range from A through B
+  N~K      K lines before and after N
+
+N/A/B may be a positive integer, `start`, or `end`. Repeat --range to read multiple ranges; request order and duplicates are preserved.
+
+Without --range/--head/--tail, the entire file is printed."#;
+
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Read known 1-based line ranges from one text file.\n\nUse this when an agent already knows the exact line numbers to inspect and needs a cross-platform replacement for `sed -n` / PowerShell line slicing. It does not search text, parse syntax, or find symbols; use `rg`, `md-toc`, or language tooling for discovery first.\n\nRange syntax is 1-based and inclusive:\n  N        one line\n  A-B      range from A through B\n  N~K      K lines before and after N\n\nN/A/B may be a positive integer, `start`, or `end`. Repeat --range to read multiple ranges; request order and duplicates are preserved.",
-    after_help = "Examples:\n  squire range src/cli.rs -r 10\n  squire range src/cli.rs -r 10-30\n  squire range src/cli.rs -r 120~20\n  squire range src/cli.rs -r start-80 -r 120-end\n  squire --print json range src/cli.rs -r 10-30"
-)]
+    long_about = LONG_ABOUT,
+    after_help = r#"Examples:
+  squire range src/cli.rs -r 10
+  squire range src/cli.rs -r 10-30
+  squire range src/cli.rs -r 120~20
+  squire range src/cli.rs -r start-80 -r 120-end
+  squire range src/cli.rs --head 20
+  squire range src/cli.rs --tail 30
+  squire range src/cli.rs                 # entire file
+  squire --print json range src/cli.rs -r 10-30"#)]
 pub struct ReadRangeArgs {
     #[arg(help = "Text file to read")]
     pub file: PathBuf,
@@ -22,11 +42,24 @@ pub struct ReadRangeArgs {
         short = 'r',
         long = "range",
         value_name = "RANGE",
-        required = true,
         help = "Repeatable 1-based range: N, A-B, or N~K; supports start/end",
         long_help = "Repeatable 1-based inclusive line range selector. Forms: N, A-B, N~K. N/A/B may be a positive integer, start, or end. K must be a non-negative integer."
     )]
     pub ranges: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "N",
+        help = "Read first N lines (mutually exclusive with --range/--tail)"
+    )]
+    pub head: Option<usize>,
+
+    #[arg(
+        long,
+        value_name = "N",
+        help = "Read last N lines (mutually exclusive with --range/--head)"
+    )]
+    pub tail: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,22 +114,63 @@ struct TextFile {
 }
 
 pub fn run(args: ReadRangeArgs, ctx: &CommandContext) -> Result<u8> {
-    let specs = args
-        .ranges
+    let has_range = !args.ranges.is_empty();
+    let has_head = args.head.is_some();
+    let has_tail = args.tail.is_some();
+    let count = [has_range, has_head, has_tail]
         .iter()
-        .map(|spec| parse_range(spec))
-        .collect::<Result<Vec<_>>>()?;
+        .filter(|&&b| b)
+        .count();
+    if count > 1 {
+        bail!("--range, --head, and --tail are mutually exclusive");
+    }
 
     let text = read_text_file(&args.file)?;
     if text.lines.is_empty() {
         bail!("{} has no lines", text.path);
     }
 
+    let (specs, display_requests): (Vec<_>, Vec<String>) = if let Some(n) = args.head {
+        if n == 0 {
+            bail!("--head must be at least 1");
+        }
+        let spec = RangeSpec::Range(Point::Start, Point::Line(n));
+        (vec![spec], vec![format!("head:{n}")])
+    } else if let Some(n) = args.tail {
+        if n == 0 {
+            bail!("--tail must be at least 1");
+        }
+        (vec![RangeSpec::One(Point::End)], vec![format!("tail:{n}")])
+    } else if has_range {
+        let specs = args
+            .ranges
+            .iter()
+            .map(|spec| parse_range(spec))
+            .collect::<Result<Vec<_>>>()?;
+        (specs, args.ranges.clone())
+    } else {
+        // no args: entire file
+        (
+            vec![RangeSpec::Range(Point::Start, Point::End)],
+            vec!["all".into()],
+        )
+    };
+
+    let requests: Vec<&str> = display_requests.iter().map(|s| s.as_str()).collect();
     let mut warnings = Vec::new();
     let resolved = specs
         .iter()
-        .zip(args.ranges.iter())
-        .map(|(spec, request)| resolve_range(spec, request, text.lines.len()))
+        .zip(requests.iter())
+        .map(|(spec, &request)| {
+            let mut r = resolve_range(spec, request, text.lines.len())?;
+            if let Some(n) = args.tail {
+                let start = text.lines.len().saturating_sub(n) + 1;
+                r.start_line = start.max(1);
+                r.end_line = text.lines.len();
+                r.clipped = false;
+            }
+            Ok(r)
+        })
         .collect::<Result<Vec<_>>>()?;
 
     let slices = resolved
@@ -172,8 +246,8 @@ fn parse_point(raw: &str) -> Result<Point> {
         .or_else(|| raw.strip_prefix('l'))
         .unwrap_or(raw);
     match raw {
-        "start" => Ok(Point::Start),
-        "end" => Ok(Point::End),
+        "start" | "START" | "begin" | "BEGIN" => Ok(Point::Start),
+        "end" | "END" | "finish" | "FINISH" => Ok(Point::End),
         _ => {
             let n = raw.parse::<usize>()?;
             if n == 0 {
@@ -301,7 +375,7 @@ fn detect_newline(raw: &[u8]) -> String {
 
 fn print_compact(file: &ReadRangeFile, slices: &[ReadRangeSlice]) {
     println!(
-        "{} | {} {} | {} lines | 1-based",
+        "{} \u{2502} {} {} \u{2502} {} lines \u{2502} 1-based",
         file.path, file.encoding, file.newline, file.line_count
     );
     println!();
@@ -314,7 +388,7 @@ fn print_compact(file: &ReadRangeFile, slices: &[ReadRangeSlice]) {
             slice.start_line, slice.end_line, slice.request
         );
         for (offset, line) in slice.content.split('\n').enumerate() {
-            println!("{:>3} | {}", slice.start_line + offset, line);
+            println!("{:>3} \u{2502} {}", slice.start_line + offset, line);
         }
     }
 }

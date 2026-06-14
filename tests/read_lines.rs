@@ -5,6 +5,8 @@ use predicates::prelude::*;
 use serde_json::Value;
 use tempfile::tempdir;
 
+const V: &str = "\u{2502}"; // │
+
 #[test]
 fn compact_output_reads_inclusive_line_range_with_one_based_numbers() {
     let dir = tempdir().unwrap();
@@ -16,13 +18,13 @@ fn compact_output_reads_inclusive_line_range_with_one_based_numbers() {
         .args(["range", "sample.txt", "-r", "1-3"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "sample.txt | utf-8 lf | 4 lines | 1-based",
-        ))
+        .stdout(predicate::str::contains(format!(
+            "sample.txt {V} utf-8 lf {V} 4 lines {V} 1-based"
+        )))
         .stdout(predicate::str::contains("@@ 1-3 requested=1-3"))
-        .stdout(predicate::str::contains("  1 | alpha"))
-        .stdout(predicate::str::contains("  2 | beta"))
-        .stdout(predicate::str::contains("  3 | gamma"));
+        .stdout(predicate::str::contains(format!("  1 {V} alpha")))
+        .stdout(predicate::str::contains(format!("  2 {V} beta")))
+        .stdout(predicate::str::contains(format!("  3 {V} gamma")));
 }
 
 #[test]
@@ -37,8 +39,8 @@ fn context_slice_reads_neighboring_lines_when_available() {
         .assert()
         .success()
         .stdout(predicate::str::contains("@@ 3-7 requested=5~2"))
-        .stdout(predicate::str::contains("  3 | 3"))
-        .stdout(predicate::str::contains("  7 | 7"));
+        .stdout(predicate::str::contains(format!("  3 {V} 3")))
+        .stdout(predicate::str::contains(format!("  7 {V} 7")));
 }
 
 #[test]
@@ -59,8 +61,10 @@ fn internal_slice_aliases_accept_line_prefix_and_colon_range() {
 
     assert!(stdout.contains("@@ 2-3 requested=L2-L3"));
     assert!(stdout.contains("@@ 2-3 requested=2:3"));
-    assert_eq!(stdout.matches("  2 | b").count(), 2);
-    assert_eq!(stdout.matches("  3 | c").count(), 2);
+    let sep = format!("  2 {V} b");
+    assert_eq!(stdout.matches(&sep).count(), 2);
+    let sep = format!("  3 {V} c");
+    assert_eq!(stdout.matches(&sep).count(), 2);
 }
 
 #[test]
@@ -91,10 +95,10 @@ fn start_and_end_resolve_to_file_boundaries() {
     let stdout = String::from_utf8(output).unwrap();
 
     assert!(stdout.contains("@@ 1-2 requested=start-2"));
-    assert!(stdout.contains("  1 | first"));
-    assert!(stdout.contains("  2 | second"));
+    assert!(stdout.contains(format!("  1 {V} first").as_str()));
+    assert!(stdout.contains(format!("  2 {V} second").as_str()));
     assert!(stdout.contains("@@ 3-3 requested=end"));
-    assert!(stdout.contains("  3 | third"));
+    assert!(stdout.contains(format!("  3 {V} third").as_str()));
 }
 
 #[test]
@@ -135,7 +139,7 @@ fn fully_out_of_bounds_slice_falls_back_to_last_line_with_warning() {
             "warning: range 100-120 clipped to 3-3",
         ))
         .stdout(predicate::str::contains("@@ 3-3 requested=100-120"))
-        .stdout(predicate::str::contains("  3 | c"));
+        .stdout(predicate::str::contains(format!("  3 {V} c")));
 }
 
 #[test]
@@ -180,4 +184,111 @@ fn json_output_uses_standard_envelope() {
     assert_eq!(json["data"]["slices"][0]["end_line"], 3);
     assert_eq!(json["data"]["slices"][0]["content"], "b\nc");
     assert_eq!(json["warnings"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn head_reads_first_n_lines() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("sample.txt"), "a\nb\nc\nd\ne\n").unwrap();
+
+    let output = Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["range", "sample.txt", "--head", "3"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+
+    assert!(stdout.contains("@@ 1-3 requested=head:3"));
+    assert!(stdout.contains(format!("  1 {V} a").as_str()));
+    assert!(stdout.contains(format!("  3 {V} c").as_str()));
+    assert!(!stdout.contains(format!("  4 {V} d").as_str()));
+}
+
+#[test]
+fn tail_reads_last_n_lines() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("sample.txt"), "a\nb\nc\nd\ne\n").unwrap();
+
+    let output = Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["range", "sample.txt", "--tail", "2"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+
+    assert!(stdout.contains("@@ 4-5 requested=tail:2"));
+    assert!(stdout.contains(format!("  4 {V} d").as_str()));
+    assert!(stdout.contains(format!("  5 {V} e").as_str()));
+    assert!(!stdout.contains(format!("  1 {V} a").as_str()));
+}
+
+#[test]
+fn no_args_prints_entire_file() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("sample.txt"), "x\ny\nz\n").unwrap();
+
+    let output = Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["range", "sample.txt"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+
+    assert!(stdout.contains("@@ 1-3 requested=all"));
+    assert!(stdout.contains(format!("  1 {V} x").as_str()));
+    assert!(stdout.contains(format!("  3 {V} z").as_str()));
+}
+
+#[test]
+fn head_tail_range_mutually_exclusive() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("sample.txt"), "a\nb\n").unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["range", "sample.txt", "--head", "1", "--tail", "1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mutually exclusive"));
+}
+
+#[test]
+fn head_zero_fails() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("sample.txt"), "a\nb\n").unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["range", "sample.txt", "--head", "0"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("at least 1"));
+}
+
+#[test]
+fn tail_zero_fails() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("sample.txt"), "a\nb\n").unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["range", "sample.txt", "--tail", "0"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("at least 1"));
 }
