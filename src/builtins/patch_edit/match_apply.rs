@@ -3,19 +3,42 @@ use std::fs;
 use std::path::Path;
 
 use super::io::{TextEncoding, atomic_write_text, read_target_text_with_encoding};
-use super::model::{PatchApplyResult, PatchBlock, PatchMatch, PatchOperation};
+use super::model::{PatchApplyOptions, PatchApplyResult, PatchBlock, PatchMatch, PatchOperation};
 use super::parse::parse_patches;
 use super::text::{
-    convert_newlines, detect_newline_style, norm_line_exact, norm_line_loose, split_lines_keepends,
+    common_base_indent, convert_newlines, detect_newline_style, is_blank_line, migrate_base_indent,
+    norm_line_exact, norm_line_loose, split_lines_keepends, strip_base_indent,
 };
+
+#[derive(Debug, Clone)]
+struct SmartIndentCandidate {
+    start: usize,
+    indent_from: String,
+    indent_to: String,
+}
 
 pub fn apply_patches(
     patch_text: &str,
     project_root: &Path,
     dry_run: bool,
 ) -> Vec<PatchApplyResult> {
+    apply_patches_with_options(
+        patch_text,
+        project_root,
+        PatchApplyOptions {
+            dry_run,
+            smart_indent: false,
+        },
+    )
+}
+
+pub fn apply_patches_with_options(
+    patch_text: &str,
+    project_root: &Path,
+    options: PatchApplyOptions,
+) -> Vec<PatchApplyResult> {
     match parse_patches(patch_text, project_root) {
-        Ok(patches) => apply_parsed_patches(&patches, dry_run),
+        Ok(patches) => apply_parsed_patches_with_options(&patches, options),
         Err(errors) => errors
             .into_iter()
             .map(|error| PatchApplyResult {
@@ -29,12 +52,27 @@ pub fn apply_patches(
                 source_line_start: None,
                 search_line_count: 0,
                 replace_line_count: 0,
+                indent_from: None,
+                indent_to: None,
             })
             .collect(),
     }
 }
 
 pub fn apply_parsed_patches(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchApplyResult> {
+    apply_parsed_patches_with_options(
+        patches,
+        PatchApplyOptions {
+            dry_run,
+            smart_indent: false,
+        },
+    )
+}
+
+pub fn apply_parsed_patches_with_options(
+    patches: &[PatchBlock],
+    options: PatchApplyOptions,
+) -> Vec<PatchApplyResult> {
     let mut indexed_results: Vec<(usize, PatchApplyResult)> = Vec::new();
     let mut file_search_patches: BTreeMap<std::path::PathBuf, Vec<(usize, PatchBlock)>> =
         BTreeMap::new();
@@ -46,20 +84,20 @@ pub fn apply_parsed_patches(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchA
                 .or_default()
                 .push((idx, patch));
         } else {
-            indexed_results.push((idx, apply_patch(&patch, dry_run)));
+            indexed_results.push((idx, apply_patch(&patch, options)));
         }
     }
 
     for (_file_path, indexed_searches) in file_search_patches {
         if indexed_searches.len() == 1 {
             let (idx, patch) = &indexed_searches[0];
-            indexed_results.push((*idx, apply_patch(patch, dry_run)));
+            indexed_results.push((*idx, apply_patch(patch, options)));
         } else {
             let patches = indexed_searches
                 .iter()
                 .map(|(_, p)| p.clone())
                 .collect::<Vec<_>>();
-            let results = apply_search_patches_batch(&patches, dry_run);
+            let results = apply_search_patches_batch(&patches, options);
             for ((idx, _), result) in indexed_searches.into_iter().zip(results) {
                 indexed_results.push((idx, result));
             }
@@ -73,8 +111,8 @@ pub fn apply_parsed_patches(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchA
         .collect()
 }
 
-fn apply_patch(patch: &PatchBlock, dry_run: bool) -> PatchApplyResult {
-    match apply_patch_inner(patch, dry_run) {
+fn apply_patch(patch: &PatchBlock, options: PatchApplyOptions) -> PatchApplyResult {
+    match apply_patch_inner(patch, options) {
         Ok(result) => result,
         Err(error) => base_result(
             patch,
@@ -83,11 +121,16 @@ fn apply_patch(patch: &PatchBlock, dry_run: bool) -> PatchApplyResult {
             Some(format!("Failed to apply patch: {error}")),
             0,
             0,
+            None,
+            None,
         ),
     }
 }
 
-fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchApplyResult> {
+fn apply_patch_inner(
+    patch: &PatchBlock,
+    options: PatchApplyOptions,
+) -> anyhow::Result<PatchApplyResult> {
     if patch.operation == PatchOperation::Create {
         let replace_text = convert_newlines(&patch.replace_content, "\n");
         let replace_lines = split_lines_keepends(&replace_text);
@@ -101,6 +144,8 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
                     Some(format!("Not a file: {}", patch.display_path)),
                     0,
                     replace_lines.len(),
+                    None,
+                    None,
                 ));
             }
 
@@ -113,6 +158,8 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
                     Some("CREATE target already exists with identical content".into()),
                     0,
                     replace_lines.len(),
+                    None,
+                    None,
                 ));
             }
 
@@ -123,10 +170,12 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
                 Some("CREATE target already exists with different content".into()),
                 0,
                 replace_lines.len(),
+                None,
+                None,
             ));
         }
 
-        if !dry_run {
+        if !options.dry_run {
             if let Some(parent) = patch.file_path.parent() {
                 fs::create_dir_all(parent)?;
             }
@@ -140,6 +189,8 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             None,
             0,
             replace_lines.len(),
+            None,
+            None,
         ));
     }
 
@@ -151,6 +202,8 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             Some(format!("File does not exist: {}", patch.display_path)),
             0,
             0,
+            None,
+            None,
         ));
     }
 
@@ -162,6 +215,8 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             Some(format!("Not a file: {}", patch.display_path)),
             0,
             0,
+            None,
+            None,
         ));
     }
 
@@ -179,10 +234,12 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
                 Some("OVERWRITE would not change the file".into()),
                 0,
                 replace_lines.len(),
+                None,
+                None,
             ));
         }
 
-        if !dry_run {
+        if !options.dry_run {
             atomic_write_text(&patch.file_path, &replace_text, encoding)?;
         }
 
@@ -193,17 +250,27 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
             None,
             0,
             replace_lines.len(),
+            None,
+            None,
         ));
     }
 
     let file_lines = split_lines_keepends(&content);
-    let matched = match_patch(patch, &file_lines, newline, &content);
+    let matched = match_patch(
+        patch,
+        &file_lines,
+        newline,
+        content.is_empty(),
+        options.smart_indent,
+    );
 
     if matched.status != "matched" {
         return Ok(match_to_result(&matched));
     }
 
-    let replace_lines = split_lines_keepends(&convert_newlines(&patch.replace_content, newline));
+    let replace_lines = adjusted_replace_lines(&matched, newline).unwrap_or_else(|| {
+        split_lines_keepends(&convert_newlines(&patch.replace_content, newline))
+    });
     let new_content = file_lines[..matched.abs_start]
         .iter()
         .chain(replace_lines.iter())
@@ -211,7 +278,7 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
         .cloned()
         .collect::<String>();
 
-    if !dry_run {
+    if !options.dry_run {
         atomic_write_text(&patch.file_path, &new_content, encoding)?;
     }
 
@@ -222,13 +289,18 @@ fn apply_patch_inner(patch: &PatchBlock, dry_run: bool) -> anyhow::Result<PatchA
         None,
         matched.search_line_count,
         matched.replace_line_count,
+        matched.indent_from.clone(),
+        matched.indent_to.clone(),
     );
     result.match_mode = matched.match_mode;
     result.match_line = matched.match_line;
     Ok(result)
 }
 
-fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<PatchApplyResult> {
+fn apply_search_patches_batch(
+    patches: &[PatchBlock],
+    options: PatchApplyOptions,
+) -> Vec<PatchApplyResult> {
     if patches.is_empty() {
         return vec![];
     }
@@ -246,6 +318,8 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                     Some(format!("File does not exist: {}", p.display_path)),
                     0,
                     0,
+                    None,
+                    None,
                 )
             })
             .collect();
@@ -262,6 +336,8 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                     Some(format!("Not a file: {}", p.display_path)),
                     0,
                     0,
+                    None,
+                    None,
                 )
             })
             .collect();
@@ -272,7 +348,18 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
         Err(error) => {
             return patches
                 .iter()
-                .map(|p| base_result(p, false, "write_error", Some(error.to_string()), 0, 0))
+                .map(|p| {
+                    base_result(
+                        p,
+                        false,
+                        "write_error",
+                        Some(error.to_string()),
+                        0,
+                        0,
+                        None,
+                        None,
+                    )
+                })
                 .collect();
         }
     };
@@ -281,7 +368,15 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
     let file_lines = split_lines_keepends(&content);
     let mut matches = patches
         .iter()
-        .map(|p| match_patch(p, &file_lines, newline, &content))
+        .map(|p| {
+            match_patch(
+                p,
+                &file_lines,
+                newline,
+                content.is_empty(),
+                options.smart_indent,
+            )
+        })
         .collect::<Vec<_>>();
 
     if check_overlap(&matches) {
@@ -311,6 +406,8 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                         Some("Not applied: another patch in the same batch failed".into()),
                         m.search_line_count,
                         m.replace_line_count,
+                        m.indent_from.clone(),
+                        m.indent_to.clone(),
                     );
                     result.match_mode = m.match_mode.clone();
                     result.match_line = m.match_line;
@@ -331,12 +428,15 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
     matched.sort_by_key(|m| std::cmp::Reverse(m.abs_start));
 
     for m in &matched {
-        let replace_lines =
-            split_lines_keepends(&convert_newlines(&m.patch.replace_content, newline));
+        let replace_lines = adjusted_replace_lines(m, newline).unwrap_or_else(|| {
+            split_lines_keepends(&convert_newlines(&m.patch.replace_content, newline))
+        });
         new_lines.splice(m.abs_start..m.abs_end, replace_lines);
     }
 
-    if !dry_run && let Err(error) = atomic_write_text(file_path, &new_lines.concat(), encoding) {
+    if !options.dry_run
+        && let Err(error) = atomic_write_text(file_path, &new_lines.concat(), encoding)
+    {
         return patches
             .iter()
             .map(|p| {
@@ -347,6 +447,8 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                     Some(format!("Failed to apply patch: {error}")),
                     0,
                     0,
+                    None,
+                    None,
                 )
             })
             .collect();
@@ -367,6 +469,8 @@ fn apply_search_patches_batch(patches: &[PatchBlock], dry_run: bool) -> Vec<Patc
                 m.error.clone(),
                 m.search_line_count,
                 m.replace_line_count,
+                m.indent_from.clone(),
+                m.indent_to.clone(),
             );
             result.match_mode = m.match_mode.clone();
             result.match_line = m.match_line;
@@ -379,7 +483,8 @@ fn match_patch(
     patch: &PatchBlock,
     file_lines: &[String],
     newline: &str,
-    content: &str,
+    is_empty_file: bool,
+    smart_indent: bool,
 ) -> PatchMatch {
     let search_text = convert_newlines(&patch.search_content, newline);
     let search_lines = split_lines_keepends(&search_text);
@@ -390,7 +495,9 @@ fn match_patch(
                 error: Option<String>,
                 related_lines: Option<Vec<usize>>,
                 match_mode: Option<String>,
-                match_line: Option<usize>| PatchMatch {
+                match_line: Option<usize>,
+                indent_from: Option<String>,
+                indent_to: Option<String>| PatchMatch {
         patch: patch.clone(),
         abs_start: 0,
         abs_end: 0,
@@ -401,9 +508,10 @@ fn match_patch(
         related_lines,
         search_line_count: search_lines.len(),
         replace_line_count: replace_lines.len(),
+        indent_from,
+        indent_to,
     };
 
-    let is_empty_file = content.is_empty();
     let is_empty_search = search_lines.is_empty();
 
     if is_empty_search && !is_empty_file {
@@ -413,21 +521,25 @@ fn match_patch(
             None,
             None,
             None,
+            None,
+            None,
         );
     }
 
     if is_empty_search && is_empty_file {
-        if replace_text == content {
+        if replace_text == content_from_file_lines(file_lines) {
             return fail(
                 "no_change_patch",
                 Some("SEARCH is empty and REPLACE would not change the file".into()),
                 None,
                 None,
                 None,
+                None,
+                None,
             );
         }
 
-        let mut matched = fail("matched", None, None, None, None);
+        let mut matched = fail("matched", None, None, None, None, None, None);
         matched.abs_start = 0;
         matched.abs_end = 0;
         return matched;
@@ -440,6 +552,8 @@ fn match_patch(
             None,
             None,
             None,
+            None,
+            None,
         );
     }
 
@@ -447,7 +561,17 @@ fn match_patch(
         let total_lines = file_lines.len();
         let (start, end) = match normalize_line_range(range, total_lines) {
             Ok(v) => v,
-            Err(error) => return fail("invalid_line_range", Some(error), None, None, None),
+            Err(error) => {
+                return fail(
+                    "invalid_line_range",
+                    Some(error),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+            }
         };
 
         let start_idx = start - 1;
@@ -460,6 +584,8 @@ fn match_patch(
                     "Line range {} is outside file bounds (1-{total_lines})",
                     format_line_range(patch.line_range)
                 )),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -487,6 +613,8 @@ fn match_patch(
             related_lines: None,
             search_line_count: search_lines.len(),
             replace_line_count: replace_lines.len(),
+            indent_from: None,
+            indent_to: None,
         };
     }
 
@@ -506,7 +634,113 @@ fn match_patch(
             Some(related),
             search_mode,
             None,
+            None,
+            None,
         );
+    }
+
+    let smart_candidates = find_smart_indent_candidates(&region, &search_lines);
+    if smart_candidates.len() > 1 {
+        let related = smart_candidates
+            .iter()
+            .map(|candidate| prefix_len + candidate.start + 1)
+            .collect();
+        return fail(
+            "search_indent_ambiguous",
+            Some(format!(
+                "SEARCH matches {} locations after indent migration; narrow the line range",
+                smart_candidates.len()
+            )),
+            Some(related),
+            None,
+            None,
+            None,
+            None,
+        );
+    }
+
+    if let Some(candidate) = smart_candidates.first() {
+        let abs_start = prefix_len + candidate.start;
+        if !smart_indent {
+            return fail(
+                "indent_mismatch",
+                Some(format!(
+                    "SEARCH matches after indent migration ({} -> {}). Use --smart-indent to apply",
+                    format_indent(&candidate.indent_from),
+                    format_indent(&candidate.indent_to)
+                )),
+                None,
+                None,
+                Some(abs_start + 1),
+                Some(candidate.indent_from.clone()),
+                Some(candidate.indent_to.clone()),
+            );
+        }
+
+        if migrate_base_indent(&replace_lines, &candidate.indent_from, &candidate.indent_to)
+            .is_none()
+        {
+            return fail(
+                "replace_indent_incompatible",
+                Some(format!(
+                    "REPLACE cannot be migrated from {} to {} because a non-empty line does not start with the source indent",
+                    format_indent(&candidate.indent_from),
+                    format_indent(&candidate.indent_to)
+                )),
+                None,
+                Some("indent_shift".into()),
+                Some(abs_start + 1),
+                Some(candidate.indent_from.clone()),
+                Some(candidate.indent_to.clone()),
+            );
+        }
+
+        return PatchMatch {
+            patch: patch.clone(),
+            abs_start,
+            abs_end: abs_start + search_lines.len(),
+            match_mode: Some("indent_shift".into()),
+            match_line: Some(abs_start + 1),
+            status: "matched".into(),
+            error: None,
+            related_lines: None,
+            search_line_count: search_lines.len(),
+            replace_line_count: replace_lines.len(),
+            indent_from: Some(candidate.indent_from.clone()),
+            indent_to: Some(candidate.indent_to.clone()),
+        };
+    }
+
+    if smart_indent {
+        let smart_replace_matches = find_smart_indent_candidates(&region, &replace_lines);
+        if smart_replace_matches.len() == 1 {
+            let candidate = &smart_replace_matches[0];
+            return fail(
+                "already_applied",
+                Some("SEARCH not found, but adjusted REPLACE already exists".into()),
+                None,
+                Some("indent_shift".into()),
+                Some(prefix_len + candidate.start + 1),
+                Some(candidate.indent_from.clone()),
+                Some(candidate.indent_to.clone()),
+            );
+        }
+
+        if smart_replace_matches.len() > 1 {
+            let related = smart_replace_matches
+                .iter()
+                .map(|candidate| prefix_len + candidate.start + 1)
+                .collect();
+            return fail(
+                "replace_ambiguous",
+                Some("SEARCH not found, and adjusted REPLACE matched multiple locations".into()),
+                Some(related),
+                Some("indent_shift".into()),
+                None,
+                None,
+                None,
+            );
+        }
     }
 
     if replace_matches.len() == 1 {
@@ -516,6 +750,8 @@ fn match_patch(
             None,
             replace_mode,
             Some(prefix_len + replace_matches[0] + 1),
+            None,
+            None,
         );
     }
 
@@ -530,6 +766,8 @@ fn match_patch(
             Some(related),
             replace_mode,
             None,
+            None,
+            None,
         );
     }
 
@@ -539,7 +777,43 @@ fn match_patch(
         None,
         None,
         None,
+        None,
+        None,
     )
+}
+
+fn adjusted_replace_lines(matched: &PatchMatch, newline: &str) -> Option<Vec<String>> {
+    let replace_lines =
+        split_lines_keepends(&convert_newlines(&matched.patch.replace_content, newline));
+    if matched.match_mode.as_deref() == Some("indent_shift") {
+        migrate_base_indent(
+            &replace_lines,
+            matched.indent_from.as_deref().unwrap_or_default(),
+            matched.indent_to.as_deref().unwrap_or_default(),
+        )
+    } else {
+        Some(replace_lines)
+    }
+}
+
+fn format_indent(indent: &str) -> String {
+    if indent.is_empty() {
+        return "0 spaces".into();
+    }
+
+    let spaces = indent.chars().filter(|c| *c == ' ').count();
+    let tabs = indent.chars().filter(|c| *c == '\t').count();
+    match (spaces, tabs) {
+        (0, 1) => "1 tab".into(),
+        (0, n) => format!("{n} tabs"),
+        (1, 0) => "1 space".into(),
+        (n, 0) => format!("{n} spaces"),
+        _ => format!("{:?}", indent),
+    }
+}
+
+fn content_from_file_lines(file_lines: &[String]) -> String {
+    file_lines.concat()
 }
 
 fn normalize_line_range(
@@ -579,6 +853,47 @@ fn find_preferred_matches(region: &[String], needle: &[String]) -> (Vec<usize>, 
     }
 
     (vec![], None)
+}
+
+fn find_smart_indent_candidates(region: &[String], needle: &[String]) -> Vec<SmartIndentCandidate> {
+    if needle.is_empty() || needle.len() > region.len() {
+        return vec![];
+    }
+
+    let indent_from = common_base_indent(needle);
+    let Some(normalized_needle) = strip_base_indent(needle, &indent_from) else {
+        return vec![];
+    };
+
+    let mut matches = Vec::new();
+    for start in 0..=(region.len() - needle.len()) {
+        let window = &region[start..start + needle.len()];
+        let indent_to = common_base_indent(window);
+        let Some(normalized_window) = strip_base_indent(window, &indent_to) else {
+            continue;
+        };
+
+        if smart_blocks_equal(&normalized_needle, &normalized_window) {
+            matches.push(SmartIndentCandidate {
+                start,
+                indent_from: indent_from.clone(),
+                indent_to,
+            });
+        }
+    }
+
+    matches
+}
+
+fn smart_blocks_equal(left: &[String], right: &[String]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(a, b)| {
+            if is_blank_line(a) || is_blank_line(b) {
+                is_blank_line(a) && is_blank_line(b)
+            } else {
+                norm_line_exact(a) == norm_line_exact(b)
+            }
+        })
 }
 
 fn find_block_matches(region: &[String], needle: &[String], loose: bool) -> Vec<usize> {
@@ -641,6 +956,8 @@ fn match_to_result(m: &PatchMatch) -> PatchApplyResult {
         m.error.clone(),
         m.search_line_count,
         m.replace_line_count,
+        m.indent_from.clone(),
+        m.indent_to.clone(),
     );
     result.match_mode = m.match_mode.clone();
     result.match_line = m.match_line;
@@ -648,6 +965,7 @@ fn match_to_result(m: &PatchMatch) -> PatchApplyResult {
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn base_result(
     patch: &PatchBlock,
     success: bool,
@@ -655,6 +973,8 @@ fn base_result(
     error: Option<String>,
     search_line_count: usize,
     replace_line_count: usize,
+    indent_from: Option<String>,
+    indent_to: Option<String>,
 ) -> PatchApplyResult {
     PatchApplyResult {
         patch: Some(patch.clone()),
@@ -667,5 +987,7 @@ fn base_result(
         source_line_start: Some(patch.source_line_start),
         search_line_count,
         replace_line_count,
+        indent_from,
+        indent_to,
     }
 }

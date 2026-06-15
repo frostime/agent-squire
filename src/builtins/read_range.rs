@@ -382,11 +382,7 @@ fn detect_newline(raw: &[u8]) -> String {
     }
 }
 
-fn print_compact(
-    file: &ReadRangeFile,
-    slices: &[ReadRangeSlice],
-    no_number: &bool
-) {
+fn print_compact(file: &ReadRangeFile, slices: &[ReadRangeSlice], no_number: &bool) {
     // let only_one_slice = slices.len() == 1;
     // println!(
     //     "{} \u{2502} {} {} \u{2502} {} lines \u{2502} 1-based",

@@ -71,3 +71,70 @@ pub fn norm_line_loose(line: &str) -> String {
         s.to_string()
     }
 }
+
+pub fn is_blank_line(line: &str) -> bool {
+    strip_line_ending(line)
+        .chars()
+        .all(|c| c == ' ' || c == '\t')
+}
+
+pub fn common_base_indent(lines: &[String]) -> String {
+    let mut common: Option<String> = None;
+
+    for line in lines.iter().filter(|line| !is_blank_line(line)) {
+        let indent = leading_whitespace(strip_line_ending(line));
+        common = Some(match common {
+            None => indent.to_string(),
+            Some(prev) => common_prefix(&prev, indent).to_string(),
+        });
+    }
+
+    common.unwrap_or_default()
+}
+
+pub fn strip_base_indent(lines: &[String], base: &str) -> Option<Vec<String>> {
+    lines
+        .iter()
+        .map(|line| strip_base_indent_line(line, base))
+        .collect()
+}
+
+pub fn migrate_base_indent(lines: &[String], from: &str, to: &str) -> Option<Vec<String>> {
+    lines
+        .iter()
+        .map(|line| {
+            if is_blank_line(line) {
+                Some(line.clone())
+            } else {
+                strip_base_indent_line(line, from).map(|stripped| format!("{to}{stripped}"))
+            }
+        })
+        .collect()
+}
+
+fn strip_base_indent_line(line: &str, base: &str) -> Option<String> {
+    if is_blank_line(line) {
+        Some(line.to_string())
+    } else {
+        line.strip_prefix(base).map(ToString::to_string)
+    }
+}
+
+fn leading_whitespace(line: &str) -> &str {
+    let end = line
+        .char_indices()
+        .find_map(|(idx, ch)| (ch != ' ' && ch != '\t').then_some(idx))
+        .unwrap_or(line.len());
+    &line[..end]
+}
+
+fn common_prefix<'a>(a: &'a str, b: &str) -> &'a str {
+    let mut end = 0usize;
+    for ((a_idx, a_ch), (_, b_ch)) in a.char_indices().zip(b.char_indices()) {
+        if a_ch != b_ch {
+            break;
+        }
+        end = a_idx + a_ch.len_utf8();
+    }
+    &a[..end]
+}

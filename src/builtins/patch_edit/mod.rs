@@ -19,8 +19,11 @@ use crate::cli::CommandContext;
 use crate::runtime::input;
 use crate::runtime::output::PrintMode;
 
-pub use match_apply::{apply_parsed_patches, apply_patches};
-pub use model::{PatchApplyResult, PatchBlock, PatchOperation};
+pub use match_apply::{
+    apply_parsed_patches, apply_parsed_patches_with_options, apply_patches,
+    apply_patches_with_options,
+};
+pub use model::{PatchApplyOptions, PatchApplyResult, PatchBlock, PatchOperation};
 pub use parse::parse_patches;
 
 const PATCH_PROMPT: &str = r#"# Squire patch-edit format
@@ -112,6 +115,9 @@ pub struct PatchEditArgs {
     #[arg(short = 'y', long, help = "Required for non-dry-run writes")]
     pub yes: bool,
 
+    #[arg(long, help = "Enable smart indent matching for SEARCH blocks")]
+    pub smart_indent: bool,
+
     #[arg(long, help = "Print the patch format specification")]
     pub prompt: bool,
 }
@@ -140,7 +146,7 @@ pub fn run(args: PatchEditArgs, ctx: &CommandContext) -> Result<u8> {
     }
 
     if args.input {
-        return run_interactive(args.dry_run, ctx);
+        return run_interactive(args.dry_run, args.smart_indent, ctx);
     }
 
     if !args.dry_run && !args.yes {
@@ -161,11 +167,23 @@ pub fn run(args: PatchEditArgs, ctx: &CommandContext) -> Result<u8> {
         return Ok(0);
     }
 
-    run_once(&patch_text, args.dry_run, ctx)
+    run_once(&patch_text, args.dry_run, args.smart_indent, ctx)
 }
 
-fn run_once(patch_text: &str, dry_run: bool, ctx: &CommandContext) -> Result<u8> {
-    let results = apply_patches(patch_text, &ctx.cwd, dry_run);
+fn run_once(
+    patch_text: &str,
+    dry_run: bool,
+    smart_indent: bool,
+    ctx: &CommandContext,
+) -> Result<u8> {
+    let results = apply_patches_with_options(
+        patch_text,
+        &ctx.cwd,
+        PatchApplyOptions {
+            dry_run,
+            smart_indent,
+        },
+    );
     let all_success = results.iter().all(|r| r.success);
 
     match ctx.print {
@@ -176,7 +194,7 @@ fn run_once(patch_text: &str, dry_run: bool, ctx: &CommandContext) -> Result<u8>
     Ok(if all_success { 0 } else { 1 })
 }
 
-fn run_interactive(dry_run_only: bool, ctx: &CommandContext) -> Result<u8> {
+fn run_interactive(dry_run_only: bool, smart_indent: bool, ctx: &CommandContext) -> Result<u8> {
     let patch_text = read_patch_text_interactive()?;
     if patch_text.trim().is_empty() {
         println!("No input. Skipped.");
@@ -184,7 +202,14 @@ fn run_interactive(dry_run_only: bool, ctx: &CommandContext) -> Result<u8> {
     }
 
     eprintln!("Dry-run preview:");
-    let preview_results = apply_patches(&patch_text, &ctx.cwd, true);
+    let preview_results = apply_patches_with_options(
+        &patch_text,
+        &ctx.cwd,
+        PatchApplyOptions {
+            dry_run: true,
+            smart_indent,
+        },
+    );
     let preview_success = preview_results.iter().all(|r| r.success);
     match ctx.print {
         PrintMode::Json => output::print_json(&preview_results, true)?,
@@ -208,7 +233,7 @@ fn run_interactive(dry_run_only: bool, ctx: &CommandContext) -> Result<u8> {
         return Ok(1);
     }
 
-    run_once(&patch_text, false, ctx)
+    run_once(&patch_text, false, smart_indent, ctx)
 }
 
 fn read_patch_text_interactive() -> Result<String> {

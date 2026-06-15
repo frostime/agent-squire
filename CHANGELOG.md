@@ -6,6 +6,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.8.4] — 2026-06-15
+
+### Added
+
+- **`patch-edit` `--smart-indent` flag** — migrates a SEARCH/REPLACE block between indentation levels instead of rejecting a literal indent mismatch.
+  - Detects the base indent of SEARCH and the matched target window, then rewrites REPLACE from `indent_from` to `indent_to`.
+  - Supports both indent increase and decrease; preserves relative indentation within the block.
+  - Blank/whitespace-only lines are ignored for base-indent calculation.
+  - Multiple candidate locations remain `search_indent_ambiguous`; a REPLACE line that cannot be migrated returns `replace_indent_incompatible`.
+  - Second `--smart-indent` run detects already-applied state (`already_applied`).
+- Structured indent metadata in results: `indent_from` and `indent_to` replace the old single `indent_delta`.
+- Options-based Rust API: `apply_patches_with_options` / `apply_parsed_patches_with_options` with `PatchApplyOptions`; old 3-arg `apply_patches` still compiles.
+
+### Changed
+
+- `cargo fmt` applied project-wide, including pre-existing `src/builtins/read_range.rs` formatting.
+
+## [v0.8.3] — 2026-06-14
+
+### Added
+
+- GitHub Actions release workflow (`.github/workflows/release.yml`).
+
+### Changed
+
+- `read-range` / `read-lines`: parameter optimization for agent-facing slice alias handling.
+
+## [v0.8.1] — 2026-06-13
+
+### Changed
+
+- `read-lines` / `read-range`: new `head:N`, `tail:N`, and no-range (whole-file) modes; delimiter character change for slice syntax.
+- Extended `read_lines` test coverage for new slice variants.
+
 ## [v0.8.0] — 2026-06-13
 
 ### Added
@@ -146,6 +180,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+[v0.8.4]: https://github.com/frostime/agent-squire/compare/v0.8.3...v0.8.4
+[v0.8.3]: https://github.com/frostime/agent-squire/compare/v0.8.1...v0.8.3
+[v0.8.1]: https://github.com/frostime/agent-squire/compare/v0.8.0...v0.8.1
+[v0.8.0]: https://github.com/frostime/agent-squire/compare/v0.6.0...v0.8.0
 [v0.6.0]: https://github.com/frostime/agent-squire/compare/v0.5.1...v0.6.0
 [v0.5.1]: https://github.com/frostime/agent-squire/compare/v0.5.0...v0.5.1
 [v0.5.0]: https://github.com/frostime/agent-squire/compare/v0.4.1...v0.5.0
