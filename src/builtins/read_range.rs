@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
-use encoding_rs::GBK;
+use encoding_rs::{GBK, UTF_16BE, UTF_16LE};
 use serde::Serialize;
 
 use crate::cli::CommandContext;
@@ -308,7 +308,7 @@ fn resolve_point(point: &Point, line_count: usize) -> usize {
 fn read_text_file(path: &Path) -> Result<TextFile> {
     let raw = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
     let (encoding, text) = decode_text(&raw)?;
-    let newline = detect_newline(&raw);
+    let newline = detect_newline(&text);
     let lines = split_lines(&text);
 
     Ok(TextFile {
@@ -320,15 +320,26 @@ fn read_text_file(path: &Path) -> Result<TextFile> {
 }
 
 fn decode_text(raw: &[u8]) -> Result<(String, String)> {
-    if raw.contains(&0) {
-        bail!("binary files are not supported");
-    }
     if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
         let text = std::str::from_utf8(&raw[3..]).context("invalid utf-8")?;
         return Ok(("utf-8-sig".into(), text.to_string()));
     }
-    if raw.starts_with(&[0xFF, 0xFE]) || raw.starts_with(&[0xFE, 0xFF]) {
-        bail!("utf-16 files are not supported");
+    if raw.starts_with(&[0xFF, 0xFE]) {
+        let (text, _, had_errors) = UTF_16LE.decode(&raw[2..]);
+        if had_errors {
+            bail!("invalid utf-16-le");
+        }
+        return Ok(("utf-16-le".into(), text.into_owned()));
+    }
+    if raw.starts_with(&[0xFE, 0xFF]) {
+        let (text, _, had_errors) = UTF_16BE.decode(&raw[2..]);
+        if had_errors {
+            bail!("invalid utf-16-be");
+        }
+        return Ok(("utf-16-be".into(), text.into_owned()));
+    }
+    if raw.contains(&0) {
+        bail!("binary files are not supported; utf-16 requires a BOM");
     }
     if let Ok(text) = std::str::from_utf8(raw) {
         return Ok(("utf-8".into(), text.to_string()));
@@ -373,10 +384,11 @@ fn split_lines(text: &str) -> Vec<String> {
     lines
 }
 
-fn detect_newline(raw: &[u8]) -> String {
-    if raw.is_empty() {
+fn detect_newline(text: &str) -> String {
+    if text.is_empty() {
         return "none".into();
     }
+    let raw = text.as_bytes();
     let has_crlf = raw.windows(2).any(|w| w == b"\r\n");
     let mut stripped = Vec::with_capacity(raw.len());
     let mut i = 0;

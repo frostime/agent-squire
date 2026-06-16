@@ -45,6 +45,30 @@ fn context_slice_reads_neighboring_lines_when_available() {
 }
 
 #[test]
+fn utf16_bom_files_use_logical_line_numbers() {
+    let dir = tempdir().unwrap();
+    let text = "第一行\r\n第二行 P0\r\n第三行\r\n";
+    let mut le = vec![0xFF, 0xFE];
+    let mut be = vec![0xFE, 0xFF];
+    for unit in text.encode_utf16() {
+        le.extend_from_slice(&unit.to_le_bytes());
+        be.extend_from_slice(&unit.to_be_bytes());
+    }
+    fs::write(dir.path().join("le.txt"), le).unwrap();
+    fs::write(dir.path().join("be.txt"), be).unwrap();
+
+    for file in ["le.txt", "be.txt"] {
+        Command::cargo_bin("squire")
+            .unwrap()
+            .current_dir(dir.path())
+            .args(["read-range", file, "--range", "2"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!("  2 {V} 第二行 P0")));
+    }
+}
+
+#[test]
 fn crlf_files_use_logical_line_numbers_without_ghost_blank_lines() {
     let dir = tempdir().unwrap();
     fs::write(
