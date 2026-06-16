@@ -269,6 +269,8 @@ fn guess_encoding(data: &[u8], bom_encoding: Option<&str>, is_binary: bool) -> S
     "latin1".into()
 }
 
+// SPEC: File metadata reports newline style of decoded text, not byte patterns.
+// Raw-byte scanning misclassifies UTF-16 CRLF as mixed.
 fn detect_newline(data: &[u8], encoding: &str, is_binary: bool) -> String {
     if is_binary || data.is_empty() {
         return "unknown".into();
@@ -336,6 +338,8 @@ fn detect_newline_text(text: &str) -> String {
     }
 }
 
+// SPEC: line_count counts logical decoded-text lines. Single-byte encodings may
+// be counted from bytes; UTF-16 must be decoded before counting separators.
 fn count_lines(path: &Path, encoding: &str, size_bytes: u64, is_binary: bool) -> Option<usize> {
     if is_binary || encoding == "binary" || encoding == "unknown" || size_bytes > LINE_COUNT_LIMIT {
         return None;

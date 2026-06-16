@@ -319,6 +319,8 @@ fn read_text_file(path: &Path) -> Result<TextFile> {
     })
 }
 
+// SPEC: read-range operates on decoded text. UTF-16 is accepted only when a BOM
+// identifies endianness; NUL-containing files without such a BOM are treated as binary.
 fn decode_text(raw: &[u8]) -> Result<(String, String)> {
     if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
         let text = std::str::from_utf8(&raw[3..]).context("invalid utf-8")?;
@@ -351,6 +353,8 @@ fn decode_text(raw: &[u8]) -> Result<(String, String)> {
     Ok(("latin1".into(), raw.iter().map(|b| *b as char).collect()))
 }
 
+// SPEC: Logical line numbers follow decoded text line separators. Treat CRLF as
+// one separator; splitting CR and LF independently creates ghost blank lines.
 fn split_lines(text: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let bytes = text.as_bytes();
@@ -384,6 +388,8 @@ fn split_lines(text: &str) -> Vec<String> {
     lines
 }
 
+// SPEC: Newline metadata is detected after decoding, not from raw bytes, so
+// UTF-16 CRLF is classified the same way as UTF-8/GBK CRLF.
 fn detect_newline(text: &str) -> String {
     if text.is_empty() {
         return "none".into();

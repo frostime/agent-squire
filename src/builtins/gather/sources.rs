@@ -118,6 +118,9 @@ pub fn fzf_dirs(cwd: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
     Ok(dirs)
 }
 
+// SPEC: Default gather discovery respects the workspace .gitignore at cwd even
+// when walking a subdirectory or a non-Git temp workspace. --no-gitignore is the
+// explicit opt-out for dir expansion and interactive candidates.
 fn configure_walker(walker: &mut WalkBuilder, cwd: &Path, respect_gitignore: bool) {
     walker
         .hidden(false)
