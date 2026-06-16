@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.8.6] — 2026-06-16
+
+### Added
+
+- `file-tree --detail`: directories with entries omitted from tree output now show `(N omitted items)`, covering depth limits, ignore filters, and built-in skip rules.
+
 ## [v0.8.5] — 2026-06-16
 
 ### Added

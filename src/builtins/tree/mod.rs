@@ -95,7 +95,8 @@ pub fn run(args: TreeArgs, ctx: &CommandContext) -> Result<u8> {
     let mut all_outputs: Vec<(String, Vec<String>, Stats)> = Vec::new();
 
     for path in &paths {
-        let tree = build_tree(path, &args)?;
+        let mut tree = build_tree(path, &args)?;
+        mark_omitted_child_counts(&mut tree);
         let stats = compute_stats(&tree);
         let mut lines = Vec::new();
         let root_name = path.file_name().and_then(|s| s.to_str()).unwrap_or(".");
@@ -120,6 +121,8 @@ struct TreeNode {
     is_dir: bool,
     size: u64,
     children: Vec<TreeNode>,
+    /// When `--detail`: Some(N) = direct filesystem entries omitted from tree output.
+    omitted_child_count: Option<usize>,
 }
 
 /// Build a tree structure using `ignore::WalkBuilder` which handles nested .gitignore.
@@ -215,6 +218,7 @@ fn build_tree(root: &Path, args: &TreeArgs) -> Result<TreeNode> {
             is_dir,
             size,
             children,
+            omitted_child_count: None,
         }
     }
 
@@ -246,6 +250,7 @@ fn build_tree(root: &Path, args: &TreeArgs) -> Result<TreeNode> {
         is_dir: true,
         size: 0,
         children: root_children,
+        omitted_child_count: None,
     })
 }
 
@@ -277,6 +282,26 @@ fn count_stats(node: &TreeNode, stats: &mut Stats) {
     }
 }
 
+/// For leaf directories in the rendered tree, record direct filesystem entries
+/// omitted by depth limits, ignore filters, or built-in skip rules.
+fn mark_omitted_child_counts(node: &mut TreeNode) {
+    if !node.is_dir {
+        return;
+    }
+    if node.children.is_empty() {
+        if let Ok(entries) = std::fs::read_dir(&node.full_path) {
+            let count = entries.count();
+            if count > 0 {
+                node.omitted_child_count = Some(count);
+            }
+        }
+    } else {
+        for child in &mut node.children {
+            mark_omitted_child_counts(child);
+        }
+    }
+}
+
 fn render_tree_node(node: &TreeNode, args: &TreeArgs, prefix: &str, out: &mut Vec<String>) {
     let children: Vec<&TreeNode> = if args.dirs_only {
         node.children.iter().filter(|c| c.is_dir).collect()
@@ -295,6 +320,11 @@ fn render_tree_node(node: &TreeNode, args: &TreeArgs, prefix: &str, out: &mut Ve
 
         if child.is_dir {
             label.push('/');
+            if args.detail {
+                if let Some(count) = child.omitted_child_count {
+                    label.push_str(&format!(" ({count} omitted items)"));
+                }
+            }
         } else if args.detail {
             let (lines, chars) = count_text_stats(&child.full_path);
             if lines > 0 {
