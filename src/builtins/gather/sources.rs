@@ -19,12 +19,7 @@ pub fn expand_dir(cwd: &Path, path: &Path, respect_gitignore: bool) -> Result<Ve
     }
 
     let mut walker = WalkBuilder::new(&root);
-    walker
-        .hidden(false)
-        .git_ignore(respect_gitignore)
-        .git_global(respect_gitignore)
-        .git_exclude(respect_gitignore)
-        .sort_by_file_name(|a, b| a.cmp(b));
+    configure_walker(&mut walker, cwd, respect_gitignore);
     walker.filter_entry(move |entry| {
         if !respect_gitignore {
             return true;
@@ -96,12 +91,7 @@ pub fn fzf_files(cwd: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
 
 pub fn fzf_dirs(cwd: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
     let mut walker = WalkBuilder::new(cwd);
-    walker
-        .hidden(false)
-        .git_ignore(respect_gitignore)
-        .git_global(respect_gitignore)
-        .git_exclude(respect_gitignore)
-        .sort_by_file_name(|a, b| a.cmp(b));
+    configure_walker(&mut walker, cwd, respect_gitignore);
     walker.filter_entry(move |entry| {
         if !respect_gitignore {
             return true;
@@ -126,6 +116,23 @@ pub fn fzf_dirs(cwd: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
     dirs.sort();
     dirs.dedup();
     Ok(dirs)
+}
+
+fn configure_walker(walker: &mut WalkBuilder, cwd: &Path, respect_gitignore: bool) {
+    walker
+        .hidden(false)
+        .git_ignore(respect_gitignore)
+        .git_global(respect_gitignore)
+        .git_exclude(respect_gitignore)
+        .sort_by_file_name(|a, b| a.cmp(b));
+
+    if respect_gitignore {
+        walker.current_dir(cwd);
+        let gitignore = cwd.join(".gitignore");
+        if gitignore.is_file() {
+            walker.add_ignore(gitignore);
+        }
+    }
 }
 
 fn resolve_path(cwd: &Path, path: &Path) -> PathBuf {
