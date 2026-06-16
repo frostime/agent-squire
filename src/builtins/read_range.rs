@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
-use encoding_rs::GBK;
+use encoding_rs::{GBK, UTF_16BE, UTF_16LE};
 use serde::Serialize;
 
 use crate::cli::CommandContext;
@@ -308,7 +308,7 @@ fn resolve_point(point: &Point, line_count: usize) -> usize {
 fn read_text_file(path: &Path) -> Result<TextFile> {
     let raw = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
     let (encoding, text) = decode_text(&raw)?;
-    let newline = detect_newline(&raw);
+    let newline = detect_newline(&text);
     let lines = split_lines(&text);
 
     Ok(TextFile {
@@ -319,16 +319,34 @@ fn read_text_file(path: &Path) -> Result<TextFile> {
     })
 }
 
+// SPEC: read-range operates on decoded text. UTF-16 is accepted only when a BOM
+// identifies endianness; UTF-32 BOMs are recognized but unsupported. NUL-containing
+// files without a supported text BOM are treated as binary.
 fn decode_text(raw: &[u8]) -> Result<(String, String)> {
-    if raw.contains(&0) {
-        bail!("binary files are not supported");
-    }
     if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
         let text = std::str::from_utf8(&raw[3..]).context("invalid utf-8")?;
         return Ok(("utf-8-sig".into(), text.to_string()));
     }
-    if raw.starts_with(&[0xFF, 0xFE]) || raw.starts_with(&[0xFE, 0xFF]) {
-        bail!("utf-16 files are not supported");
+    // Check UTF-32 before UTF-16: UTF-32 LE starts with the UTF-16 LE prefix.
+    if raw.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) || raw.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
+        bail!("utf-32 files are not supported");
+    }
+    if raw.starts_with(&[0xFF, 0xFE]) {
+        let (text, _, had_errors) = UTF_16LE.decode(&raw[2..]);
+        if had_errors {
+            bail!("invalid utf-16-le");
+        }
+        return Ok(("utf-16-le".into(), text.into_owned()));
+    }
+    if raw.starts_with(&[0xFE, 0xFF]) {
+        let (text, _, had_errors) = UTF_16BE.decode(&raw[2..]);
+        if had_errors {
+            bail!("invalid utf-16-be");
+        }
+        return Ok(("utf-16-be".into(), text.into_owned()));
+    }
+    if raw.contains(&0) {
+        bail!("binary files are not supported; utf-16 requires a BOM");
     }
     if let Ok(text) = std::str::from_utf8(raw) {
         return Ok(("utf-8".into(), text.to_string()));
@@ -340,26 +358,48 @@ fn decode_text(raw: &[u8]) -> Result<(String, String)> {
     Ok(("latin1".into(), raw.iter().map(|b| *b as char).collect()))
 }
 
+// SPEC: Logical line numbers follow decoded text line separators. Treat CRLF as
+// one separator; splitting CR and LF independently creates ghost blank lines.
 fn split_lines(text: &str) -> Vec<String> {
-    let without_final_newline = text
-        .strip_suffix("\r\n")
-        .or_else(|| text.strip_suffix('\n'))
-        .or_else(|| text.strip_suffix('\r'))
-        .unwrap_or(text);
-    if without_final_newline.is_empty() {
-        Vec::new()
-    } else {
-        without_final_newline
-            .split_inclusive(['\n', '\r'])
-            .map(|line| line.trim_end_matches(['\n', '\r']).to_string())
-            .collect()
+    let mut lines = Vec::new();
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    let mut i = 0;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' => {
+                lines.push(text[start..i].to_string());
+                i += 1;
+                start = i;
+            }
+            b'\r' => {
+                lines.push(text[start..i].to_string());
+                i += if bytes.get(i + 1) == Some(&b'\n') {
+                    2
+                } else {
+                    1
+                };
+                start = i;
+            }
+            _ => i += 1,
+        }
     }
+
+    if start < text.len() {
+        lines.push(text[start..].to_string());
+    }
+
+    lines
 }
 
-fn detect_newline(raw: &[u8]) -> String {
-    if raw.is_empty() {
+// SPEC: Newline metadata is detected after decoding, not from raw bytes, so
+// UTF-16 CRLF is classified the same way as UTF-8/GBK CRLF.
+fn detect_newline(text: &str) -> String {
+    if text.is_empty() {
         return "none".into();
     }
+    let raw = text.as_bytes();
     let has_crlf = raw.windows(2).any(|w| w == b"\r\n");
     let mut stripped = Vec::with_capacity(raw.len());
     let mut i = 0;

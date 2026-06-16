@@ -18,10 +18,9 @@ fn compact_output_reads_inclusive_line_range_with_one_based_numbers() {
         .args(["range", "sample.txt", "-r", "1-3"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!(
-            "sample.txt {V} utf-8 lf {V} 4 lines {V} 1-based"
-        )))
-        .stdout(predicate::str::contains("@@ 1-3 requested=1-3"))
+        .stdout(predicate::str::contains(
+            "@@ Range Chunk │ sample.txt:1-3 (from-args=1-3) @@",
+        ))
         .stdout(predicate::str::contains(format!("  1 {V} alpha")))
         .stdout(predicate::str::contains(format!("  2 {V} beta")))
         .stdout(predicate::str::contains(format!("  3 {V} gamma")));
@@ -38,9 +37,103 @@ fn context_slice_reads_neighboring_lines_when_available() {
         .args(["read-range", "sample.txt", "--range", "5~2"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("@@ 3-7 requested=5~2"))
+        .stdout(predicate::str::contains(
+            "@@ Range Chunk │ sample.txt:3-7 (from-args=5~2) @@",
+        ))
         .stdout(predicate::str::contains(format!("  3 {V} 3")))
         .stdout(predicate::str::contains(format!("  7 {V} 7")));
+}
+
+fn utf32_bom_bytes(text: &str, little_endian: bool) -> Vec<u8> {
+    let mut bytes = if little_endian {
+        vec![0xFF, 0xFE, 0x00, 0x00]
+    } else {
+        vec![0x00, 0x00, 0xFE, 0xFF]
+    };
+    for ch in text.chars() {
+        let pair = if little_endian {
+            (ch as u32).to_le_bytes()
+        } else {
+            (ch as u32).to_be_bytes()
+        };
+        bytes.extend_from_slice(&pair);
+    }
+    bytes
+}
+
+#[test]
+fn utf32_bom_files_are_rejected_instead_of_misread_as_utf16() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("le.txt"), utf32_bom_bytes("A\nB\n", true)).unwrap();
+    fs::write(dir.path().join("be.txt"), utf32_bom_bytes("A\nB\n", false)).unwrap();
+
+    for file in ["le.txt", "be.txt"] {
+        Command::cargo_bin("squire")
+            .unwrap()
+            .current_dir(dir.path())
+            .args(["read-range", file, "--range", "1"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("utf-32 files are not supported"));
+    }
+}
+
+#[test]
+fn utf16_bom_files_use_logical_line_numbers() {
+    let dir = tempdir().unwrap();
+    let text = "第一行\r\n第二行 P0\r\n第三行\r\n";
+    let mut le = vec![0xFF, 0xFE];
+    let mut be = vec![0xFE, 0xFF];
+    for unit in text.encode_utf16() {
+        le.extend_from_slice(&unit.to_le_bytes());
+        be.extend_from_slice(&unit.to_be_bytes());
+    }
+    fs::write(dir.path().join("le.txt"), le).unwrap();
+    fs::write(dir.path().join("be.txt"), be).unwrap();
+
+    for file in ["le.txt", "be.txt"] {
+        Command::cargo_bin("squire")
+            .unwrap()
+            .current_dir(dir.path())
+            .args(["read-range", file, "--range", "2"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!("  2 {V} 第二行 P0")));
+    }
+}
+
+#[test]
+fn crlf_files_use_logical_line_numbers_without_ghost_blank_lines() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("sample.txt"),
+        "line1\r\nline2\r\nline3\r\nP0 target\r\nline5\r\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["read-range", "sample.txt", "--range", "4"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!("  4 {V} P0 target")));
+
+    let output = Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["read-range", "sample.txt", "--head", "5"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+
+    assert!(stdout.contains(format!("  1 {V} line1").as_str()));
+    assert!(stdout.contains(format!("  4 {V} P0 target").as_str()));
+    assert!(stdout.contains(format!("  5 {V} line5").as_str()));
+    assert!(!stdout.lines().any(|line| line == format!("  2 {V} ")));
 }
 
 #[test]
@@ -59,8 +152,8 @@ fn internal_slice_aliases_accept_line_prefix_and_colon_range() {
         .clone();
     let stdout = String::from_utf8(output).unwrap();
 
-    assert!(stdout.contains("@@ 2-3 requested=L2-L3"));
-    assert!(stdout.contains("@@ 2-3 requested=2:3"));
+    assert!(stdout.contains("@@ Range Chunk │ sample.txt:2-3 (from-args=L2-L3) @@"));
+    assert!(stdout.contains("@@ Range Chunk │ sample.txt:2-3 (from-args=2:3) @@"));
     let sep = format!("  2 {V} b");
     assert_eq!(stdout.matches(&sep).count(), 2);
     let sep = format!("  3 {V} c");
@@ -94,10 +187,10 @@ fn start_and_end_resolve_to_file_boundaries() {
         .clone();
     let stdout = String::from_utf8(output).unwrap();
 
-    assert!(stdout.contains("@@ 1-2 requested=start-2"));
+    assert!(stdout.contains("@@ Range Chunk │ sample.txt:1-2 (from-args=start-2) @@"));
     assert!(stdout.contains(format!("  1 {V} first").as_str()));
     assert!(stdout.contains(format!("  2 {V} second").as_str()));
-    assert!(stdout.contains("@@ 3-3 requested=end"));
+    assert!(stdout.contains("@@ Range Chunk │ sample.txt:3-3 (from-args=end) @@"));
     assert!(stdout.contains(format!("  3 {V} third").as_str()));
 }
 
@@ -117,9 +210,15 @@ fn multiple_slices_preserve_request_order_and_duplicates() {
         .clone();
     let stdout = String::from_utf8(output).unwrap();
 
-    let first = stdout.find("@@ 3-3 requested=3").unwrap();
-    let second = stdout.find("@@ 1-2 requested=1-2").unwrap();
-    let duplicate = stdout.rfind("@@ 3-3 requested=3").unwrap();
+    let first = stdout
+        .find("@@ Range Chunk │ sample.txt:3-3 (from-args=3) @@")
+        .unwrap();
+    let second = stdout
+        .find("@@ Range Chunk │ sample.txt:1-2 (from-args=1-2) @@")
+        .unwrap();
+    let duplicate = stdout
+        .rfind("@@ Range Chunk │ sample.txt:3-3 (from-args=3) @@")
+        .unwrap();
     assert!(first < second);
     assert!(second < duplicate);
 }
@@ -138,7 +237,9 @@ fn fully_out_of_bounds_slice_falls_back_to_last_line_with_warning() {
         .stderr(predicate::str::contains(
             "warning: range 100-120 clipped to 3-3",
         ))
-        .stdout(predicate::str::contains("@@ 3-3 requested=100-120"))
+        .stdout(predicate::str::contains(
+            "@@ Range Chunk │ sample.txt:3-3 (from-args=100-120) @@",
+        ))
         .stdout(predicate::str::contains(format!("  3 {V} c")));
 }
 
@@ -202,7 +303,7 @@ fn head_reads_first_n_lines() {
         .clone();
     let stdout = String::from_utf8(output).unwrap();
 
-    assert!(stdout.contains("@@ 1-3 requested=head:3"));
+    assert!(stdout.contains("@@ Range Chunk │ sample.txt:1-3 (from-args=head:3) @@"));
     assert!(stdout.contains(format!("  1 {V} a").as_str()));
     assert!(stdout.contains(format!("  3 {V} c").as_str()));
     assert!(!stdout.contains(format!("  4 {V} d").as_str()));
@@ -224,7 +325,7 @@ fn tail_reads_last_n_lines() {
         .clone();
     let stdout = String::from_utf8(output).unwrap();
 
-    assert!(stdout.contains("@@ 4-5 requested=tail:2"));
+    assert!(stdout.contains("@@ Range Chunk │ sample.txt:4-5 (from-args=tail:2) @@"));
     assert!(stdout.contains(format!("  4 {V} d").as_str()));
     assert!(stdout.contains(format!("  5 {V} e").as_str()));
     assert!(!stdout.contains(format!("  1 {V} a").as_str()));
@@ -246,7 +347,7 @@ fn no_args_prints_entire_file() {
         .clone();
     let stdout = String::from_utf8(output).unwrap();
 
-    assert!(stdout.contains("@@ 1-3 requested=all"));
+    assert!(stdout.contains("@@ Range Chunk │ sample.txt:1-3 (from-args=all) @@"));
     assert!(stdout.contains(format!("  1 {V} x").as_str()));
     assert!(stdout.contains(format!("  3 {V} z").as_str()));
 }

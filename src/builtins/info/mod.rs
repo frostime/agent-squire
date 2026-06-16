@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, SecondsFormat};
 use clap::Args;
-use encoding_rs::GBK;
+use encoding_rs::{GBK, UTF_16BE, UTF_16LE};
 use glob::glob;
 use serde::Serialize;
 use walkdir::WalkDir;
@@ -195,7 +195,7 @@ fn inspect_file(path: &Path) -> Result<FileInfo> {
     let (bom, bom_encoding) = detect_bom(&sample);
     let is_binary = is_binary_data(&sample, bom_encoding.as_deref());
     let encoding = guess_encoding(&sample, bom_encoding.as_deref(), is_binary);
-    let newline = detect_newline(&sample, is_binary);
+    let newline = detect_newline(&sample, &encoding, is_binary);
     let line_count = count_lines(path, &encoding, stat.len(), is_binary);
 
     let modified: DateTime<Local> = stat
@@ -220,8 +220,15 @@ fn inspect_file(path: &Path) -> Result<FileInfo> {
 }
 
 fn detect_bom(data: &[u8]) -> (String, Option<String>) {
+    // Check longer BOMs first: UTF-32 LE starts with the UTF-16 LE prefix.
     if data.starts_with(&[0xEF, 0xBB, 0xBF]) {
         return ("utf-8-sig".into(), Some("utf-8-sig".into()));
+    }
+    if data.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) {
+        return ("utf-32-le".into(), Some("utf-32-le".into()));
+    }
+    if data.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
+        return ("utf-32-be".into(), Some("utf-32-be".into()));
     }
     if data.starts_with(&[0xFF, 0xFE]) {
         return ("utf-16-le".into(), Some("utf-16-le".into()));
@@ -269,26 +276,62 @@ fn guess_encoding(data: &[u8], bom_encoding: Option<&str>, is_binary: bool) -> S
     "latin1".into()
 }
 
-fn detect_newline(data: &[u8], is_binary: bool) -> String {
+// SPEC: File metadata reports newline style of decoded text, not byte patterns.
+// Raw-byte scanning misclassifies UTF-16 CRLF as mixed.
+fn detect_newline(data: &[u8], encoding: &str, is_binary: bool) -> String {
     if is_binary || data.is_empty() {
         return "unknown".into();
     }
 
-    let has_crlf = data.windows(2).any(|w| w == b"\r\n");
-    // Strip CRLF pairs, then check for standalone LF / CR
-    let stripped: Vec<u8> = {
-        let mut out = Vec::with_capacity(data.len());
-        let mut i = 0;
-        while i < data.len() {
-            if i + 1 < data.len() && data[i] == b'\r' && data[i + 1] == b'\n' {
-                i += 2;
-            } else {
-                out.push(data[i]);
-                i += 1;
-            }
+    if let Some(text) = decode_sample_text(data, encoding) {
+        return detect_newline_text(&text);
+    }
+
+    "unknown".into()
+}
+
+fn decode_sample_text(data: &[u8], encoding: &str) -> Option<String> {
+    match encoding {
+        "utf-8" => std::str::from_utf8(data).ok().map(ToOwned::to_owned),
+        "utf-8-sig" => std::str::from_utf8(data.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(data))
+            .ok()
+            .map(ToOwned::to_owned),
+        "utf-16-le" => {
+            let data = data.strip_prefix(&[0xFF, 0xFE]).unwrap_or(data);
+            let (text, _, had_errors) = UTF_16LE.decode(data);
+            (!had_errors).then(|| text.into_owned())
         }
-        out
-    };
+        "utf-16-be" => {
+            let data = data.strip_prefix(&[0xFE, 0xFF]).unwrap_or(data);
+            let (text, _, had_errors) = UTF_16BE.decode(data);
+            (!had_errors).then(|| text.into_owned())
+        }
+        "gbk" => {
+            let (text, _, had_errors) = GBK.decode(data);
+            (!had_errors).then(|| text.into_owned())
+        }
+        "latin1" => Some(data.iter().map(|b| *b as char).collect()),
+        _ => None,
+    }
+}
+
+fn detect_newline_text(text: &str) -> String {
+    if text.is_empty() {
+        return "none".into();
+    }
+
+    let raw = text.as_bytes();
+    let has_crlf = raw.windows(2).any(|w| w == b"\r\n");
+    let mut stripped = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        if i + 1 < raw.len() && raw[i] == b'\r' && raw[i + 1] == b'\n' {
+            i += 2;
+        } else {
+            stripped.push(raw[i]);
+            i += 1;
+        }
+    }
 
     let has_lf = stripped.contains(&b'\n');
     let has_cr = stripped.contains(&b'\r');
@@ -302,6 +345,8 @@ fn detect_newline(data: &[u8], is_binary: bool) -> String {
     }
 }
 
+// SPEC: line_count counts logical decoded-text lines. Single-byte encodings may
+// be counted from bytes; UTF-16 must be decoded before counting separators.
 fn count_lines(path: &Path, encoding: &str, size_bytes: u64, is_binary: bool) -> Option<usize> {
     if is_binary || encoding == "binary" || encoding == "unknown" || size_bytes > LINE_COUNT_LIMIT {
         return None;
@@ -323,6 +368,10 @@ fn count_lines(path: &Path, encoding: &str, size_bytes: u64, is_binary: bool) ->
         "utf-8-sig" => {
             let data = raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw);
             std::str::from_utf8(data).ok()?;
+        }
+        "utf-16-le" | "utf-16-be" => {
+            let text = decode_sample_text(&raw, encoding)?;
+            return Some(count_text_lines(&text));
         }
         "gbk" => {
             let (_, _, had_errors) = GBK.decode(&raw);
@@ -360,6 +409,38 @@ fn count_lines(path: &Path, encoding: &str, size_bytes: u64, is_binary: bool) ->
     } else {
         separators + 1
     })
+}
+
+fn count_text_lines(text: &str) -> usize {
+    if text.is_empty() {
+        return 0;
+    }
+
+    let raw = text.as_bytes();
+    let mut separators = 0usize;
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] == b'\r' {
+            separators += 1;
+            if i + 1 < raw.len() && raw[i + 1] == b'\n' {
+                i += 2;
+            } else {
+                i += 1;
+            }
+        } else if raw[i] == b'\n' {
+            separators += 1;
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+
+    let last = raw.last().copied();
+    if last == Some(b'\n') || last == Some(b'\r') {
+        separators
+    } else {
+        separators + 1
+    }
 }
 
 fn display_path(path: &Path) -> String {
