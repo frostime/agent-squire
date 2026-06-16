@@ -341,19 +341,36 @@ fn decode_text(raw: &[u8]) -> Result<(String, String)> {
 }
 
 fn split_lines(text: &str) -> Vec<String> {
-    let without_final_newline = text
-        .strip_suffix("\r\n")
-        .or_else(|| text.strip_suffix('\n'))
-        .or_else(|| text.strip_suffix('\r'))
-        .unwrap_or(text);
-    if without_final_newline.is_empty() {
-        Vec::new()
-    } else {
-        without_final_newline
-            .split_inclusive(['\n', '\r'])
-            .map(|line| line.trim_end_matches(['\n', '\r']).to_string())
-            .collect()
+    let mut lines = Vec::new();
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    let mut i = 0;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' => {
+                lines.push(text[start..i].to_string());
+                i += 1;
+                start = i;
+            }
+            b'\r' => {
+                lines.push(text[start..i].to_string());
+                i += if bytes.get(i + 1) == Some(&b'\n') {
+                    2
+                } else {
+                    1
+                };
+                start = i;
+            }
+            _ => i += 1,
+        }
     }
+
+    if start < text.len() {
+        lines.push(text[start..].to_string());
+    }
+
+    lines
 }
 
 fn detect_newline(raw: &[u8]) -> String {
