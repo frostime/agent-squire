@@ -44,6 +44,40 @@ fn context_slice_reads_neighboring_lines_when_available() {
         .stdout(predicate::str::contains(format!("  7 {V} 7")));
 }
 
+fn utf32_bom_bytes(text: &str, little_endian: bool) -> Vec<u8> {
+    let mut bytes = if little_endian {
+        vec![0xFF, 0xFE, 0x00, 0x00]
+    } else {
+        vec![0x00, 0x00, 0xFE, 0xFF]
+    };
+    for ch in text.chars() {
+        let pair = if little_endian {
+            (ch as u32).to_le_bytes()
+        } else {
+            (ch as u32).to_be_bytes()
+        };
+        bytes.extend_from_slice(&pair);
+    }
+    bytes
+}
+
+#[test]
+fn utf32_bom_files_are_rejected_instead_of_misread_as_utf16() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("le.txt"), utf32_bom_bytes("A\nB\n", true)).unwrap();
+    fs::write(dir.path().join("be.txt"), utf32_bom_bytes("A\nB\n", false)).unwrap();
+
+    for file in ["le.txt", "be.txt"] {
+        Command::cargo_bin("squire")
+            .unwrap()
+            .current_dir(dir.path())
+            .args(["read-range", file, "--range", "1"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("utf-32 files are not supported"));
+    }
+}
+
 #[test]
 fn utf16_bom_files_use_logical_line_numbers() {
     let dir = tempdir().unwrap();

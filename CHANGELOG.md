@@ -17,6 +17,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 - `read-range` no longer inserts ghost blank lines or shifts line numbers for CRLF files.
 - `file-info` no longer misclassifies UTF-16 CRLF files as `mixed` newline style.
+- UTF-32 BOM files are no longer misclassified as UTF-16; `read-range` rejects them explicitly and `file-info` reports the unsupported UTF-32 BOM.
 - `gather dir:...`, `tree:...`, and interactive candidates now respect the workspace `.gitignore` from the current working directory, including non-Git temp workspaces.
 
 ## [v0.8.4] — 2026-06-15

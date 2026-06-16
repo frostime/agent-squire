@@ -320,11 +320,16 @@ fn read_text_file(path: &Path) -> Result<TextFile> {
 }
 
 // SPEC: read-range operates on decoded text. UTF-16 is accepted only when a BOM
-// identifies endianness; NUL-containing files without such a BOM are treated as binary.
+// identifies endianness; UTF-32 BOMs are recognized but unsupported. NUL-containing
+// files without a supported text BOM are treated as binary.
 fn decode_text(raw: &[u8]) -> Result<(String, String)> {
     if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
         let text = std::str::from_utf8(&raw[3..]).context("invalid utf-8")?;
         return Ok(("utf-8-sig".into(), text.to_string()));
+    }
+    // Check UTF-32 before UTF-16: UTF-32 LE starts with the UTF-16 LE prefix.
+    if raw.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) || raw.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
+        bail!("utf-32 files are not supported");
     }
     if raw.starts_with(&[0xFF, 0xFE]) {
         let (text, _, had_errors) = UTF_16LE.decode(&raw[2..]);

@@ -220,8 +220,15 @@ fn inspect_file(path: &Path) -> Result<FileInfo> {
 }
 
 fn detect_bom(data: &[u8]) -> (String, Option<String>) {
+    // Check longer BOMs first: UTF-32 LE starts with the UTF-16 LE prefix.
     if data.starts_with(&[0xEF, 0xBB, 0xBF]) {
         return ("utf-8-sig".into(), Some("utf-8-sig".into()));
+    }
+    if data.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) {
+        return ("utf-32-le".into(), Some("utf-32-le".into()));
+    }
+    if data.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
+        return ("utf-32-be".into(), Some("utf-32-be".into()));
     }
     if data.starts_with(&[0xFF, 0xFE]) {
         return ("utf-16-le".into(), Some("utf-16-le".into()));
