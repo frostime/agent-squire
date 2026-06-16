@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.8.5] — 2026-06-16
+
+### Added
+
+- `read-range` now supports UTF-16 LE/BE files when a BOM identifies endianness.
+- `file-info` now reports newline style and line counts for UTF-16 BOM text files.
+
+### Fixed
+
+- `read-range` no longer inserts ghost blank lines or shifts line numbers for CRLF files.
+- `file-info` no longer misclassifies UTF-16 CRLF files as `mixed` newline style.
+- `gather dir:...`, `tree:...`, and interactive candidates now respect the workspace `.gitignore` from the current working directory, including non-Git temp workspaces.
+
 ## [v0.8.4] — 2026-06-15
 
 ### Added
@@ -180,6 +193,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+[v0.8.5]: https://github.com/frostime/agent-squire/compare/v0.8.4...v0.8.5
 [v0.8.4]: https://github.com/frostime/agent-squire/compare/v0.8.3...v0.8.4
 [v0.8.3]: https://github.com/frostime/agent-squire/compare/v0.8.1...v0.8.3
 [v0.8.1]: https://github.com/frostime/agent-squire/compare/v0.8.0...v0.8.1
