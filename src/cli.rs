@@ -119,6 +119,13 @@ pub enum CliCommand {
     )]
     ImgWeb(builtins::imgweb::ImgWebArgs),
 
+    #[command(
+        name = "tmp",
+        alias = "temp",
+        about = "Create a temporary file or directory"
+    )]
+    Tmp(builtins::tmp::TmpArgs),
+
     #[command(name = "now", about = "Print the current local date and time")]
     Now(NowArgs),
 
@@ -182,6 +189,7 @@ fn try_main() -> Result<u8> {
         CliCommand::Compose(args) => builtins::compose::run(args, &ctx),
         CliCommand::Gather(args) => builtins::gather::run(args, &ctx),
         CliCommand::ImgWeb(args) => builtins::imgweb::run(args, &ctx),
+        CliCommand::Tmp(args) => builtins::tmp::run(args, &ctx),
         CliCommand::Now(_) => builtins::now::run(&ctx),
         CliCommand::List(_) => run_list(&ctx),
         CliCommand::External(raw) => {

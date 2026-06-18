@@ -7,5 +7,6 @@ pub mod md_links;
 pub mod now;
 pub mod patch_edit;
 pub mod read_range;
+pub mod tmp;
 pub mod toc;
 pub mod tree;

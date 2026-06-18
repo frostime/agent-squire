@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.8.7] — 2026-06-18
+
+### Added
+
+- `tmp` command (alias `temp`) to create temporary files/directories under `<SYSTEM_TEMP_DIR>/asq-temp` or a custom `--root`. Supports timestamp prefix, type inference, and `--open`.
+
 ## [v0.8.6] — 2026-06-16
 
 ### Added
