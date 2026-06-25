@@ -174,3 +174,104 @@ fn data_toc_yaml_uses_yq_when_available() {
             "YAML comments, anchors, aliases, tags, and formatting are not preserved",
         ));
 }
+
+#[test]
+fn data_toc_compresses_dynamic_keys() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("dynamic.json"),
+        r#"{"users":{"user_001":{"name":"A"},"user_002":{"name":"B"},"user_003":{"name":"C"},"user_004":{"name":"D"}}}"#,
+    )
+    .unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["data-toc", "dynamic.json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{dynamic_key} object"))
+        .stdout(predicate::str::contains("compressed as {dynamic_key}"));
+}
+
+#[test]
+fn data_toc_splits_same_shape_jsonl_by_discriminator() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("events.jsonl"),
+        concat!(
+            r#"{"type":"click","timestamp":"t1","payload":{"id":1}}"#,
+            "\n",
+            r#"{"type":"view","timestamp":"t2","payload":{"id":2}}"#,
+            "\n",
+            r#"{"type":"click","timestamp":"t3","payload":{"id":3}}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["data-toc", "events.jsonl", "--format", "jsonl"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("type=click rows=2 first_line=1"))
+        .stdout(predicate::str::contains("type=view rows=1 first_line=2"));
+}
+
+#[test]
+fn data_toc_suggests_json_projection_reads() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("result.json"),
+        r#"{"runs":[{"id":"a","config":{"seed":1},"metrics":{"acc":0.9}},{"id":"b","config":{"seed":2},"metrics":{"acc":0.8},"notes":"x"}]}"#,
+    )
+    .unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["data-toc", "result.json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("jq '.runs[0:5]'"))
+        .stdout(predicate::str::contains(
+            "map({config, id, metrics, notes})",
+        ));
+}
+
+#[test]
+fn data_toc_examples_are_explicit_truncated_and_redacted() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("examples.json"),
+        r#"{"runs":[{"id":"short","token":"secret-token-123","email":"a@example.com","note":"abcdefghijklmnopqrstuvwxyz0123456789"}]}"#,
+    )
+    .unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["data-toc", "examples.json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("examples=").not());
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["data-toc", "examples.json", "--examples"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("id string examples=[\"short\"]"))
+        .stdout(predicate::str::contains(
+            "token string examples=[<redacted>]",
+        ))
+        .stdout(predicate::str::contains(
+            "email string examples=[<redacted>]",
+        ))
+        .stdout(predicate::str::contains(
+            "note string examples=[\"abcdefghijklmnopqrstuvwxyz012345…\"]",
+        ));
+}

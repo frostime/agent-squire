@@ -31,6 +31,7 @@ asq data-toc result.json
 asq data-toc logs.jsonl --format jsonl
 asq data-toc compose.yaml --format yaml
 asq data-toc result.json --budget large
+asq data-toc result.json --examples
 asq --print json data-toc result.json
 ```
 
@@ -40,7 +41,7 @@ asq --print json data-toc result.json
 - `?` means observed in only part of the sample.
 - `complete=false` means budget limits or sampling affected the scan.
 - JSONL record groups are approximate structural clusters.
-- Values are hidden by default; use follow-up reads for representative samples.
+- Values are hidden by default; `--examples` prints limited truncated/redacted examples.
 
 ## Follow-up reads
 
@@ -74,6 +75,9 @@ pub struct DataTocArgs {
         help = "Scan budget: small, normal, large"
     )]
     pub budget: Budget,
+
+    #[arg(long, help = "Print limited truncated/redacted example values")]
+    pub examples: bool,
 
     #[arg(long, help = "Print the agent-facing data-toc guide")]
     pub prompt: bool,
@@ -126,6 +130,7 @@ struct BudgetProfile {
     max_jsonl_lines: usize,
     max_groups: usize,
     max_signature_depth: usize,
+    max_examples: usize,
 }
 
 impl Budget {
@@ -139,6 +144,7 @@ impl Budget {
                 max_jsonl_lines: 200,
                 max_groups: 4,
                 max_signature_depth: 3,
+                max_examples: 1,
             },
             Self::Normal => BudgetProfile {
                 max_depth: 6,
@@ -148,6 +154,7 @@ impl Budget {
                 max_jsonl_lines: 1000,
                 max_groups: 8,
                 max_signature_depth: 4,
+                max_examples: 2,
             },
             Self::Large => BudgetProfile {
                 max_depth: 10,
@@ -157,6 +164,7 @@ impl Budget {
                 max_jsonl_lines: 10_000,
                 max_groups: 20,
                 max_signature_depth: 6,
+                max_examples: 3,
             },
         }
     }
@@ -214,6 +222,8 @@ struct TocNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     shape_count: Option<usize>,
     children: Vec<TocNode>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    examples: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -288,12 +298,16 @@ impl BuildState {
         }
     }
 
-    fn truncate(&mut self, warning: impl Into<String>) {
-        self.truncated = true;
+    fn warn(&mut self, warning: impl Into<String>) {
         let warning = warning.into();
         if !self.warnings.contains(&warning) {
             self.warnings.push(warning);
         }
+    }
+
+    fn truncate(&mut self, warning: impl Into<String>) {
+        self.truncated = true;
+        self.warn(warning);
     }
 }
 
@@ -328,9 +342,9 @@ pub fn run(args: DataTocArgs, ctx: &CommandContext) -> Result<u8> {
     let profile = args.budget.profile();
     let (data, warnings) = match format {
         DataFormat::Auto => unreachable!("auto format should be resolved"),
-        DataFormat::Json => analyze_json(path, profile)?,
-        DataFormat::Jsonl => analyze_jsonl(path, profile)?,
-        DataFormat::Yaml => analyze_yaml(path, profile)?,
+        DataFormat::Json => analyze_json(path, profile, args.examples)?,
+        DataFormat::Jsonl => analyze_jsonl(path, profile, args.examples)?,
+        DataFormat::Yaml => analyze_yaml(path, profile, args.examples)?,
     };
 
     match ctx.print {
@@ -374,7 +388,11 @@ fn resolve_format(path: &Path, requested: DataFormat) -> Result<DataFormat> {
     }
 }
 
-fn analyze_json(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Vec<String>)> {
+fn analyze_json(
+    path: &Path,
+    profile: BudgetProfile,
+    include_examples: bool,
+) -> Result<(DataTocData, Vec<String>)> {
     let metadata =
         fs::metadata(path).with_context(|| format!("failed to stat {}", path.display()))?;
     if metadata.len() > profile.max_json_bytes {
@@ -396,11 +414,16 @@ fn analyze_json(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Vec
         None,
         value,
         profile,
+        include_examples,
         Vec::new(),
     ))
 }
 
-fn analyze_yaml(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Vec<String>)> {
+fn analyze_yaml(
+    path: &Path,
+    profile: BudgetProfile,
+    include_examples: bool,
+) -> Result<(DataTocData, Vec<String>)> {
     let value = yaml_to_json(path)?;
     Ok(analyze_json_value(
         path,
@@ -408,6 +431,7 @@ fn analyze_yaml(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Vec
         Some(DataFormat::Json),
         value,
         profile,
+        include_examples,
         vec![
             "format=yaml parsed_as=json".to_string(),
             "YAML comments, anchors, aliases, tags, and formatting are not preserved.".to_string(),
@@ -450,10 +474,20 @@ fn analyze_json_value(
     parsed_as: Option<DataFormat>,
     value: Value,
     profile: BudgetProfile,
+    include_examples: bool,
     extra_notes: Vec<String>,
 ) -> (DataTocData, Vec<String>) {
     let mut state = BuildState::new();
-    let root = summarize_values("$", "$", &[&value], None, profile, 0, &mut state);
+    let root = summarize_values(
+        "$",
+        "$",
+        &[&value],
+        None,
+        profile,
+        0,
+        include_examples,
+        &mut state,
+    );
     let suggested_reads = suggested_reads_for_json(path, &root, format);
     let mut notes = default_notes();
     notes.extend(extra_notes);
@@ -479,7 +513,11 @@ fn analyze_json_value(
     (data, Vec::new())
 }
 
-fn analyze_jsonl(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Vec<String>)> {
+fn analyze_jsonl(
+    path: &Path,
+    profile: BudgetProfile,
+    include_examples: bool,
+) -> Result<(DataTocData, Vec<String>)> {
     let file =
         fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let reader = BufReader::new(file);
@@ -521,7 +559,16 @@ fn analyze_jsonl(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Ve
         .iter()
         .map(|record| &record.value)
         .collect::<Vec<_>>();
-    let element = summarize_values("[]", "$[]", &values, None, profile, 0, &mut state);
+    let element = summarize_values(
+        "[]",
+        "$[]",
+        &values,
+        None,
+        profile,
+        0,
+        include_examples,
+        &mut state,
+    );
     let root = TocNode {
         name: "$".to_string(),
         path: "$".to_string(),
@@ -530,6 +577,7 @@ fn analyze_jsonl(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Ve
         observed_items: Some(records.len()),
         shape_count: Some(exact_shape_count(&records, profile)),
         children: vec![element],
+        examples: Vec::new(),
     };
 
     let record_groups = group_jsonl_records(&records, profile, &mut state);
@@ -575,6 +623,7 @@ fn analyze_jsonl(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Ve
     Ok((data, Vec::new()))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn summarize_values(
     name: &str,
     path: &str,
@@ -582,6 +631,7 @@ fn summarize_values(
     presence: Option<Presence>,
     profile: BudgetProfile,
     depth: usize,
+    include_examples: bool,
     state: &mut BuildState,
 ) -> TocNode {
     if values.is_empty() {
@@ -593,8 +643,11 @@ fn summarize_values(
             observed_items: None,
             shape_count: None,
             children: Vec::new(),
+            examples: Vec::new(),
         };
     }
+
+    let examples = example_values(values, include_examples, profile);
 
     if depth >= profile.max_depth {
         state.truncate(format!(
@@ -609,16 +662,33 @@ fn summarize_values(
             observed_items: None,
             shape_count: None,
             children: Vec::new(),
+            examples,
         };
     }
 
     match combined_kind(values) {
-        NodeKind::Object => {
-            summarize_object_values(name, path, values, presence, profile, depth, state)
-        }
-        NodeKind::Array => {
-            summarize_array_values(name, path, values, presence, profile, depth, state)
-        }
+        NodeKind::Object => summarize_object_values(
+            name,
+            path,
+            values,
+            presence,
+            profile,
+            depth,
+            include_examples,
+            examples,
+            state,
+        ),
+        NodeKind::Array => summarize_array_values(
+            name,
+            path,
+            values,
+            presence,
+            profile,
+            depth,
+            include_examples,
+            examples,
+            state,
+        ),
         kind => TocNode {
             name: name.to_string(),
             path: path.to_string(),
@@ -627,10 +697,18 @@ fn summarize_values(
             observed_items: None,
             shape_count: None,
             children: Vec::new(),
+            examples,
         },
     }
 }
 
+struct ObjectFieldValues<'a> {
+    key: String,
+    values: Vec<&'a Value>,
+    total: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn summarize_object_values(
     name: &str,
     path: &str,
@@ -638,6 +716,8 @@ fn summarize_object_values(
     presence: Option<Presence>,
     profile: BudgetProfile,
     depth: usize,
+    include_examples: bool,
+    examples: Vec<String>,
     state: &mut BuildState,
 ) -> TocNode {
     let objects = values
@@ -652,7 +732,20 @@ fn summarize_object_values(
         }
     }
 
-    let total_fields = field_values.len();
+    let mut fields = field_values
+        .into_iter()
+        .map(|(key, values)| ObjectFieldValues {
+            key,
+            values,
+            total: objects.len(),
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(dynamic_field) = compress_dynamic_fields(&fields, path, state) {
+        fields = vec![dynamic_field];
+    }
+
+    let total_fields = fields.len();
     if total_fields > profile.max_children {
         state.truncate(format!(
             "Child limit {} reached at {path}; omitted {} field(s).",
@@ -661,26 +754,31 @@ fn summarize_object_values(
         ));
     }
 
-    let children = field_values
+    let children = fields
         .into_iter()
         .take(profile.max_children)
-        .map(|(key, child_values)| {
-            let child_presence = if objects.len() > 1 {
+        .map(|field| {
+            let child_presence = if field.total > 1 {
                 Some(Presence {
-                    observed: child_values.len(),
-                    total: objects.len(),
+                    observed: field.values.len(),
+                    total: field.total,
                 })
             } else {
                 None
             };
-            let child_path = append_path_key(path, &key);
+            let child_path = if field.key == "{dynamic_key}" {
+                format!("{path}.{{dynamic_key}}")
+            } else {
+                append_path_key(path, &field.key)
+            };
             summarize_values(
-                &key,
+                &field.key,
                 &child_path,
-                &child_values,
+                &field.values,
                 child_presence,
                 profile,
                 depth + 1,
+                include_examples,
                 state,
             )
         })
@@ -694,9 +792,11 @@ fn summarize_object_values(
         observed_items: None,
         shape_count: None,
         children,
+        examples,
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn summarize_array_values(
     name: &str,
     path: &str,
@@ -704,6 +804,8 @@ fn summarize_array_values(
     presence: Option<Presence>,
     profile: BudgetProfile,
     depth: usize,
+    include_examples: bool,
+    examples: Vec<String>,
     state: &mut BuildState,
 ) -> TocNode {
     let arrays = values
@@ -750,6 +852,7 @@ fn summarize_array_values(
             None,
             profile,
             depth + 1,
+            include_examples,
             state,
         )]
     };
@@ -762,7 +865,119 @@ fn summarize_array_values(
         observed_items: Some(sampled_items.len()),
         shape_count,
         children,
+        examples,
     }
+}
+
+fn compress_dynamic_fields<'a>(
+    fields: &[ObjectFieldValues<'a>],
+    path: &str,
+    state: &mut BuildState,
+) -> Option<ObjectFieldValues<'a>> {
+    if fields.len() < 4 {
+        return None;
+    }
+
+    let mut signatures = BTreeSet::new();
+    let mut values = Vec::new();
+    for field in fields {
+        for value in &field.values {
+            signatures.insert(structural_signature(value, 3).join("\n"));
+            values.push(*value);
+        }
+    }
+
+    if signatures.len() <= 2 && dynamic_key_names(fields) {
+        state.warn(format!(
+            "Some sibling keys at {path} were compressed as {{dynamic_key}}."
+        ));
+        return Some(ObjectFieldValues {
+            key: "{dynamic_key}".to_string(),
+            values,
+            total: fields.len(),
+        });
+    }
+
+    None
+}
+
+fn dynamic_key_names(fields: &[ObjectFieldValues<'_>]) -> bool {
+    let numericish = fields
+        .iter()
+        .filter(|field| field.key.chars().any(|ch| ch.is_ascii_digit()))
+        .count();
+    let shared_prefix = longest_shared_prefix(
+        &fields
+            .iter()
+            .map(|field| field.key.as_str())
+            .collect::<Vec<_>>(),
+    );
+    numericish * 2 >= fields.len() || shared_prefix.len() >= 3
+}
+
+fn longest_shared_prefix(values: &[&str]) -> String {
+    let Some(first) = values.first() else {
+        return String::new();
+    };
+    let mut prefix = String::new();
+    for (index, ch) in first.chars().enumerate() {
+        if values
+            .iter()
+            .all(|value| value.chars().nth(index) == Some(ch))
+        {
+            prefix.push(ch);
+        } else {
+            break;
+        }
+    }
+    prefix
+}
+
+fn example_values(
+    values: &[&Value],
+    include_examples: bool,
+    profile: BudgetProfile,
+) -> Vec<String> {
+    if !include_examples {
+        return Vec::new();
+    }
+
+    values
+        .iter()
+        .filter_map(|value| example_value(value))
+        .take(profile.max_examples)
+        .collect()
+}
+
+fn example_value(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => Some("null".to_string()),
+        Value::Bool(boolean) => Some(boolean.to_string()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::String(text) => Some(redact_and_truncate(text)),
+        Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
+fn redact_and_truncate(text: &str) -> String {
+    const MAX_CHARS: usize = 32;
+    let lower = text.to_ascii_lowercase();
+    let sensitive = lower.contains("token")
+        || lower.contains("secret")
+        || lower.contains("password")
+        || lower.contains("apikey")
+        || lower.contains("api_key")
+        || text.contains('@');
+    if sensitive {
+        return "<redacted>".to_string();
+    }
+
+    let mut normalized = text.replace('\n', " ");
+    if normalized.chars().count() > MAX_CHARS {
+        normalized = normalized.chars().take(MAX_CHARS).collect::<String>();
+        normalized.push('…');
+    }
+    format!("\"{normalized}\"")
 }
 
 fn combined_kind(values: &[&Value]) -> NodeKind {
@@ -874,7 +1089,10 @@ fn group_jsonl_records(
             });
     }
 
-    let mut groups = exact_groups.into_values().collect::<Vec<_>>();
+    let mut groups = exact_groups
+        .into_values()
+        .flat_map(|group| split_by_discriminator(records, group))
+        .collect::<Vec<_>>();
     groups.sort_by(|left, right| {
         right
             .records
@@ -893,7 +1111,8 @@ fn group_jsonl_records(
         .into_iter()
         .enumerate()
         .map(|(index, group)| RecordGroup {
-            label: discriminator_label(records, &group)
+            label: group
+                .label
                 .unwrap_or_else(|| format!("shape#{}", index + 1)),
             rows: group.records.len(),
             first_line: group.first_line,
@@ -927,7 +1146,52 @@ fn group_jsonl_records(
     record_groups
 }
 
-fn discriminator_label(records: &[JsonlRecord], group: &ShapeGroup) -> Option<String> {
+struct LabeledShapeGroup {
+    label: Option<String>,
+    records: Vec<usize>,
+    first_line: usize,
+    shape: Vec<String>,
+}
+
+fn split_by_discriminator(records: &[JsonlRecord], group: ShapeGroup) -> Vec<LabeledShapeGroup> {
+    if let Some((field, values)) = discriminator_values(records, &group) {
+        if values.len() > 1 {
+            return values
+                .into_iter()
+                .map(|(value, record_indexes)| LabeledShapeGroup {
+                    label: Some(format!("{field}={value}")),
+                    first_line: record_indexes
+                        .iter()
+                        .map(|record_index| records[*record_index].line)
+                        .min()
+                        .unwrap_or(group.first_line),
+                    records: record_indexes,
+                    shape: group.shape.clone(),
+                })
+                .collect();
+        }
+        if let Some((value, _)) = values.into_iter().next() {
+            return vec![LabeledShapeGroup {
+                label: Some(format!("{field}={value}")),
+                records: group.records,
+                first_line: group.first_line,
+                shape: group.shape,
+            }];
+        }
+    }
+
+    vec![LabeledShapeGroup {
+        label: None,
+        records: group.records,
+        first_line: group.first_line,
+        shape: group.shape,
+    }]
+}
+
+fn discriminator_values(
+    records: &[JsonlRecord],
+    group: &ShapeGroup,
+) -> Option<(&'static str, BTreeMap<String, Vec<usize>>)> {
     const CANDIDATES: &[&str] = &[
         "type",
         "kind",
@@ -941,7 +1205,7 @@ fn discriminator_label(records: &[JsonlRecord], group: &ShapeGroup) -> Option<St
     ];
 
     for candidate in CANDIDATES {
-        let mut values = BTreeSet::new();
+        let mut values: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         let mut all_present = true;
         for record_index in &group.records {
             let record = &records[*record_index];
@@ -957,12 +1221,11 @@ fn discriminator_label(records: &[JsonlRecord], group: &ShapeGroup) -> Option<St
                 all_present = false;
                 break;
             };
-            values.insert(label_value);
+            values.entry(label_value).or_default().push(*record_index);
         }
 
-        if all_present && values.len() == 1 {
-            let value = values.into_iter().next().expect("one discriminator value");
-            return Some(format!("{candidate}={value}"));
+        if all_present && !values.is_empty() {
+            return Some((candidate, values));
         }
     }
 
@@ -1018,18 +1281,63 @@ fn suggested_reads_for_json(path: &Path, root: &TocNode, format: DataFormat) -> 
         return Vec::new();
     }
 
-    let Some(array_path) = find_first_array_path(root) else {
+    let Some(array_node) = find_best_array_node(root) else {
         return vec![format!("jq '.' {}", display_path(path))];
     };
-    let jq_path = array_path.trim_start_matches('$');
-    vec![format!("jq '{jq_path}[0:5]' {}", display_path(path))]
+    let jq_path = array_node.path.trim_start_matches('$');
+    let mut reads = vec![format!("jq '{jq_path}[0:5]' {}", display_path(path))];
+
+    if let Some(projection) = suggested_projection(array_node) {
+        reads.push(format!(
+            "jq '{jq_path}[0:20] | map({projection})' {}",
+            display_path(path)
+        ));
+    }
+
+    reads
 }
 
-fn find_first_array_path(node: &TocNode) -> Option<String> {
-    if node.kind == NodeKind::Array && node.path != "$" {
-        return Some(node.path.clone());
+fn find_best_array_node(node: &TocNode) -> Option<&TocNode> {
+    let mut best = if node.kind == NodeKind::Array && node.path != "$" {
+        Some(node)
+    } else {
+        None
+    };
+    for child in &node.children {
+        if let Some(candidate) = find_best_array_node(child) {
+            if best.and_then(|node| node.observed_items).unwrap_or(0)
+                < candidate.observed_items.unwrap_or(0)
+            {
+                best = Some(candidate);
+            }
+        }
     }
-    node.children.iter().find_map(find_first_array_path)
+    best
+}
+
+fn suggested_projection(array_node: &TocNode) -> Option<String> {
+    let element = array_node.children.first()?;
+    if element.kind != NodeKind::Object {
+        return None;
+    }
+    let fields = element
+        .children
+        .iter()
+        .filter(|child| child.name != "{dynamic_key}")
+        .filter(|child| {
+            child
+                .presence
+                .as_ref()
+                .is_none_or(|presence| presence.observed > 0)
+        })
+        .take(4)
+        .map(|child| child.name.as_str())
+        .collect::<Vec<_>>();
+    if fields.is_empty() {
+        None
+    } else {
+        Some(format!("{{{}}}", fields.join(", ")))
+    }
 }
 
 fn print_compact(data: &DataTocData, warnings: &[String], budget: Budget) {
@@ -1145,6 +1453,9 @@ fn compact_node_label(node: &TocNode) -> String {
         if shape_count > 1 {
             label.push_str(&format!(" shape≈{shape_count}"));
         }
+    }
+    if !node.examples.is_empty() {
+        label.push_str(&format!(" examples=[{}]", node.examples.join(", ")));
     }
     label
 }

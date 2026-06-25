@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- `data-toc` command (alias `datatoc`) to preview JSON/JSONL structure with bounded scans, array index compression, JSONL record groups, and an agent-facing `--prompt` guide.
+- `data-toc` command (alias `datatoc`) to preview JSON/YAML/JSONL structure with bounded scans, array index compression, dynamic key compression, JSONL record groups, optional redacted examples, and an agent-facing `--prompt` guide.
 
 ## [v0.9.0] — 2026-06-25
 

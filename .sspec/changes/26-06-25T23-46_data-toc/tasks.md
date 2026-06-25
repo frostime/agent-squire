@@ -46,12 +46,12 @@ updated: "2026-06-26T00:19+08:00"
 1. BC-6: Run `asq data-toc compose.yaml` without `yq` → error states YAML support requires `yq`.
 2. BC-6: Run `asq data-toc compose.yaml` with `yq` → output says `format=yaml parsed_as=json`.
 
-### Phase 3: Heuristics and examples ⏳
-- [ ] Add dynamic key compression in `src/builtins/data_toc/mod.rs` while preserving existing JSON/JSONL output contracts.
-- [ ] Improve JSONL discriminator labeling in `src/builtins/data_toc/mod.rs` using the design candidate fields after shape grouping.
-- [ ] Improve `suggested_reads` generation in `src/builtins/data_toc/mod.rs` for JSON and JSONL paths.
-- [ ] Add `--examples` with truncation/redaction in `src/builtins/data_toc/mod.rs`.
-- [ ] Extend `tests/data_toc.rs` for dynamic keys, discriminator labels, suggested reads, and redacted examples.
+### Phase 3: Heuristics and examples ✅
+- [x] Add dynamic key compression in `src/builtins/data_toc/mod.rs` while preserving existing JSON/JSONL output contracts.
+- [x] Improve JSONL discriminator labeling in `src/builtins/data_toc/mod.rs` using the design candidate fields after shape grouping.
+- [x] Improve `suggested_reads` generation in `src/builtins/data_toc/mod.rs` for JSON and JSONL paths.
+- [x] Add `--examples` with truncation/redaction in `src/builtins/data_toc/mod.rs`.
+- [x] Extend `tests/data_toc.rs` for dynamic keys, discriminator labels, suggested reads, and redacted examples.
 **Verification**:
 - Agent: dynamic-key fixture renders `{dynamic_key}` instead of many sibling keys.
 - Agent: JSONL fixture with stable `type` values renders `type=<value>` group labels.
@@ -69,13 +69,13 @@ updated: "2026-06-26T00:19+08:00"
 
 ## Progress
 
-**Overall**: 66%
+**Overall**: 100%
 
 | Phase | Progress | Status |
 |-------|----------|--------|
 | Phase 1 | 7/7 | ✅ |
 | Phase 2 | 4/4 | ✅ |
-| Phase 3 | 0/5 | ⏳ |
+| Phase 3 | 5/5 | ✅
 
 **Recent**:
 - 2026-06-26T00:19+08:00 Planned phased execution tasks after design confirmation.
@@ -90,3 +90,8 @@ updated: "2026-06-26T00:19+08:00"
 - 2026-06-26T00:56+08:00 Added YAML conversion through external `yq`, compatible with `yq -o=json . file` and `yq . file`; sample YAML output verified.
 - 2026-06-26T00:57+08:00 Verified YAML compact and JSON metadata include `format=yaml parsed_as=json`.
 - 2026-06-26T00:58+08:00 Added YAML missing/present `yq` tests; focused `cargo test --test data_toc` passed.
+- 2026-06-26T01:01+08:00 Added dynamic key compression; sample renders `{dynamic_key}` without marking scan incomplete.
+- 2026-06-26T01:03+08:00 Improved JSONL discriminator grouping; same-shape records with different `type` values split into labeled groups.
+- 2026-06-26T01:04+08:00 Improved JSON suggested reads with array projection suggestions.
+- 2026-06-26T01:05+08:00 Verified `--examples` truncates long strings, redacts sensitive-looking values, and remains off by default.
+- 2026-06-26T01:06+08:00 Extended Phase 3 tests for dynamic keys, discriminator labels, suggested reads, and examples; focused `cargo test --test data_toc` passed.

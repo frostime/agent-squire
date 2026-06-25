@@ -33,7 +33,7 @@ Agent Squire packages small, predictable local tools behind one CLI:
 | `file-tree` | `view-tree` | Show a project directory tree for orientation. |
 | `file-info` | `fileinfo` | Inspect file metadata and text/binary format. |
 | `md-toc` | `mdtoc` | Show Markdown headings with 1-based line numbers. |
-| `data-toc` | `datatoc` | Show JSON/JSONL structure before reading data. |
+| `data-toc` | `datatoc` | Show JSON/YAML/JSONL structure before reading data. |
 | `md-links` | `mdlinks` | Extract Markdown references and resolve file targets. |
 | `read-range` | `range` | Read known 1-based line ranges from one text file. |
 | `patch-edit` | `patch` | Apply SEARCH/REPLACE patch blocks. |
@@ -88,11 +88,13 @@ Use this before selecting exact files, line ranges, or structured data samples t
 ```bash
 squire data-toc result.json
 squire data-toc logs.jsonl --format jsonl
+squire data-toc compose.yaml --format yaml
+squire data-toc result.json --examples
 squire --print json data-toc result.json
 squire data-toc --prompt
 ```
 
-`data-toc` prints a bounded structure map for JSON and JSONL files. It collapses array indexes to `[]`, reports observed field presence, groups JSONL record shapes with representative `first_line` values, and hides raw values by default.
+`data-toc` prints a bounded structure map for JSON, JSONL, and YAML files. It collapses array indexes to `[]`, reports observed field presence, compresses dynamic sibling keys as `{dynamic_key}`, groups JSONL record shapes with representative `first_line` values, and hides raw values by default. YAML support uses external `yq`; `--examples` prints limited truncated/redacted sample values.
 
 ### Read exact line ranges
 

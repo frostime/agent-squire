@@ -1,6 +1,6 @@
 # Memory: data-toc
 
-**Updated**: 2026-06-26T00:53+08:00
+**Updated**: 2026-06-26T02:05+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -19,13 +19,13 @@ This section records the change starting point in git and MUST NOT be edited or 
 
 ## State
 
-Phase 1 JSON/JSONL MVP implementation is complete and validated. Phase 2 YAML via `yq` and Phase 3 heuristics/examples remain pending in `tasks.md`.
+All three phases are implemented and the change is in REVIEW status. Validation commands passed.
 
 ## Key Files
 
 - `.sspec/changes/26-06-25T23-46_data-toc/spec.md` — behavior contract, implementation labels, scope summary.
 - `.sspec/changes/26-06-25T23-46_data-toc/design.md` — CLI interface, data model, analysis flow, output previews.
-- `.sspec/changes/26-06-25T23-46_data-toc/tasks.md` — phased execution plan; Phase 1 is the current implementation target.
+- `.sspec/changes/26-06-25T23-46_data-toc/tasks.md` — phased execution plan; all phases marked complete.
 - `.sspec/changes/26-06-25T23-46_data-toc/reference/gpt-prd.md` — archived source PRD draft from `.sspec/tmp/gpt-prd.md`.
 - `src/cli.rs` — CLI subcommand registration and global output flags.
 - `src/runtime/output.rs` — `Envelope<T>` JSON output convention.
@@ -45,3 +45,6 @@ Phase 1 JSON/JSONL MVP implementation is complete and validated. Phase 2 YAML vi
 - [2026-06-25T23:48+08:00] Clarify completed; created `feat/data-toc` and drafted design artifacts for a phased built-in `data-toc` command.
 - [2026-06-26T00:19+08:00] Checkpoint commit `2a9d18e` recorded design artifacts; plan phase created Phase 1/2/3 task breakdown.
 - [2026-06-26T00:53+08:00] Implemented Phase 1 `data-toc` JSON/JSONL MVP, updated docs/tests, and completed validation commands.
+- [2026-06-26T00:57+08:00] Implemented Phase 2 YAML support via external `yq`.
+- [2026-06-26T01:06+08:00] Implemented Phase 3 dynamic keys, smarter JSONL discriminators, improved suggested reads, and `--examples`.
+- [2026-06-26T02:05+08:00] Final validation passed; change status moved to REVIEW.
