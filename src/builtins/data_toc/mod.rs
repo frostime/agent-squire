@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
@@ -13,13 +14,14 @@ use crate::runtime::output::{self, Envelope, PrintMode};
 
 const DATA_TOC_PROMPT: &str = r#"# Squire data-toc guide
 
-`asq data-toc` summarizes JSON and JSONL structure before an agent reads raw data content.
+`asq data-toc` summarizes JSON, JSONL, and YAML structure before an agent reads raw data content.
 
 ## When to use
 
-- Unknown JSON / JSONL files where structure matters more than values.
+- Unknown JSON / JSONL / YAML files where structure matters more than values.
 - Large arrays with repeated objects.
 - JSONL logs or event streams that may contain multiple record shapes.
+- YAML configuration files when `yq` is available.
 - Before choosing precise `jq`, `sed`, or `read-range` follow-up reads.
 
 ## Commands
@@ -27,6 +29,7 @@ const DATA_TOC_PROMPT: &str = r#"# Squire data-toc guide
 ```bash
 asq data-toc result.json
 asq data-toc logs.jsonl --format jsonl
+asq data-toc compose.yaml --format yaml
 asq data-toc result.json --budget large
 asq --print json data-toc result.json
 ```
@@ -49,18 +52,18 @@ sed -n '37p' logs.jsonl | jq .
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Pre-scan JSON and JSONL files and print an agent-facing structural table of contents.\n\nUse this before reading raw structured data into context. The output is a bounded structure map, not a JSON Schema, validator, or query language. Values are hidden by default.",
-    after_help = "Examples:\n  squire data-toc result.json\n  squire data-toc logs.jsonl --format jsonl\n  squire data-toc result.json --budget large\n  squire --print json data-toc result.json\n  squire data-toc --prompt"
+    long_about = "Pre-scan JSON, JSONL, and YAML files and print an agent-facing structural table of contents.\n\nUse this before reading raw structured data into context. The output is a bounded structure map, not a JSON Schema, validator, or query language. YAML support uses external yq and is approximate. Values are hidden by default.",
+    after_help = "Examples:\n  squire data-toc result.json\n  squire data-toc logs.jsonl --format jsonl\n  squire data-toc compose.yaml --format yaml\n  squire data-toc result.json --budget large\n  squire --print json data-toc result.json\n  squire data-toc --prompt"
 )]
 pub struct DataTocArgs {
-    #[arg(help = "JSON or JSONL file to inspect; not required with --prompt")]
+    #[arg(help = "JSON, JSONL, or YAML file to inspect; not required with --prompt")]
     pub path: Option<PathBuf>,
 
     #[arg(
         long,
         value_enum,
         default_value_t = DataFormat::Auto,
-        help = "Input format: auto, json, jsonl"
+        help = "Input format: auto, json, jsonl, yaml"
     )]
     pub format: DataFormat,
 
@@ -82,6 +85,7 @@ pub enum DataFormat {
     Auto,
     Json,
     Jsonl,
+    Yaml,
 }
 
 impl std::fmt::Display for DataFormat {
@@ -90,6 +94,7 @@ impl std::fmt::Display for DataFormat {
             Self::Auto => write!(formatter, "auto"),
             Self::Json => write!(formatter, "json"),
             Self::Jsonl => write!(formatter, "jsonl"),
+            Self::Yaml => write!(formatter, "yaml"),
         }
     }
 }
@@ -168,6 +173,8 @@ struct DataTocData {
     notes: Vec<String>,
     suggested_reads: Vec<String>,
     record_groups: Vec<RecordGroup>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parsed_as: Option<DataFormat>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -323,6 +330,7 @@ pub fn run(args: DataTocArgs, ctx: &CommandContext) -> Result<u8> {
         DataFormat::Auto => unreachable!("auto format should be resolved"),
         DataFormat::Json => analyze_json(path, profile)?,
         DataFormat::Jsonl => analyze_jsonl(path, profile)?,
+        DataFormat::Yaml => analyze_yaml(path, profile)?,
     };
 
     match ctx.print {
@@ -359,8 +367,10 @@ fn resolve_format(path: &Path, requested: DataFormat) -> Result<DataFormat> {
     match extension.as_str() {
         "json" => Ok(DataFormat::Json),
         "jsonl" | "ndjson" => Ok(DataFormat::Jsonl),
-        "yaml" | "yml" => bail!("YAML support is planned for Phase 2 and will require yq"),
-        _ => bail!("format could not be detected; pass --format json or --format jsonl"),
+        "yaml" | "yml" => Ok(DataFormat::Yaml),
+        _ => bail!(
+            "format could not be detected; pass --format json, --format jsonl, or --format yaml"
+        ),
     }
 }
 
@@ -380,15 +390,78 @@ fn analyze_json(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Vec
     let value: Value = serde_json::from_str(&content)
         .with_context(|| format!("invalid JSON: {}", path.display()))?;
 
+    Ok(analyze_json_value(
+        path,
+        DataFormat::Json,
+        None,
+        value,
+        profile,
+        Vec::new(),
+    ))
+}
+
+fn analyze_yaml(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Vec<String>)> {
+    let value = yaml_to_json(path)?;
+    Ok(analyze_json_value(
+        path,
+        DataFormat::Yaml,
+        Some(DataFormat::Json),
+        value,
+        profile,
+        vec![
+            "format=yaml parsed_as=json".to_string(),
+            "YAML comments, anchors, aliases, tags, and formatting are not preserved.".to_string(),
+        ],
+    ))
+}
+
+fn yaml_to_json(path: &Path) -> Result<Value> {
+    let attempts: &[&[&str]] = &[&["-o=json", "."], &["."]];
+    let mut errors = Vec::new();
+
+    for args in attempts {
+        let output = Command::new("yq")
+            .args(*args)
+            .arg(path)
+            .output()
+            .context("YAML support requires yq")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            if !stderr.is_empty() {
+                errors.push(stderr);
+            }
+            continue;
+        }
+        match serde_json::from_slice::<Value>(&output.stdout) {
+            Ok(value) => return Ok(value),
+            Err(err) => errors.push(format!("yq output was not valid JSON: {err}")),
+        }
+    }
+
+    if errors.is_empty() {
+        bail!("yq failed to parse YAML input");
+    }
+    bail!("yq failed to parse YAML input: {}", errors.join("; "))
+}
+
+fn analyze_json_value(
+    path: &Path,
+    format: DataFormat,
+    parsed_as: Option<DataFormat>,
+    value: Value,
+    profile: BudgetProfile,
+    extra_notes: Vec<String>,
+) -> (DataTocData, Vec<String>) {
     let mut state = BuildState::new();
     let root = summarize_values("$", "$", &[&value], None, profile, 0, &mut state);
-    let suggested_reads = suggested_reads_for_json(path, &root);
+    let suggested_reads = suggested_reads_for_json(path, &root, format);
     let mut notes = default_notes();
+    notes.extend(extra_notes);
     notes.extend(state.warnings.iter().cloned());
 
     let data = DataTocData {
         path: display_path(path),
-        format: DataFormat::Json,
+        format,
         mode: TocMode::StructureToc,
         complete: !state.truncated,
         summary: DataSummary {
@@ -400,9 +473,10 @@ fn analyze_json(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Vec
         notes,
         suggested_reads,
         record_groups: Vec::new(),
+        parsed_as,
     };
 
-    Ok((data, Vec::new()))
+    (data, Vec::new())
 }
 
 fn analyze_jsonl(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Vec<String>)> {
@@ -495,6 +569,7 @@ fn analyze_jsonl(path: &Path, profile: BudgetProfile) -> Result<(DataTocData, Ve
         notes,
         suggested_reads,
         record_groups,
+        parsed_as: None,
     };
 
     Ok((data, Vec::new()))
@@ -938,7 +1013,11 @@ fn default_notes() -> Vec<String> {
     ]
 }
 
-fn suggested_reads_for_json(path: &Path, root: &TocNode) -> Vec<String> {
+fn suggested_reads_for_json(path: &Path, root: &TocNode, format: DataFormat) -> Vec<String> {
+    if format == DataFormat::Yaml {
+        return Vec::new();
+    }
+
     let Some(array_path) = find_first_array_path(root) else {
         return vec![format!("jq '.' {}", display_path(path))];
     };
@@ -961,6 +1040,9 @@ fn print_compact(data: &DataTocData, warnings: &[String], budget: Budget) {
         data.complete,
         budget
     );
+    if let Some(parsed_as) = data.parsed_as {
+        header.push_str(&format!(" parsed_as={parsed_as}"));
+    }
     if let Some(sampled_lines) = data.summary.sampled_lines {
         header.push_str(&format!(" sampled_lines={sampled_lines}"));
     }

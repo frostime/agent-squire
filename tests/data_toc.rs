@@ -124,3 +124,53 @@ fn data_toc_invalid_jsonl_reports_line_number() {
         .failure()
         .stderr(predicate::str::contains("invalid JSONL at line 2"));
 }
+
+#[test]
+fn data_toc_yaml_requires_yq() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("compose.yaml"),
+        "services:\n  app:\n    image: demo\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .env("PATH", "/nonexistent")
+        .args(["data-toc", "compose.yaml"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("YAML support requires yq"));
+}
+
+#[test]
+fn data_toc_yaml_uses_yq_when_available() {
+    if std::process::Command::new("yq")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        return;
+    }
+
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("compose.yaml"),
+        "services:\n  app:\n    image: demo\n    ports:\n      - '8080:80'\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["data-toc", "compose.yaml"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("format=yaml"))
+        .stdout(predicate::str::contains("parsed_as=json"))
+        .stdout(predicate::str::contains("services object"))
+        .stdout(predicate::str::contains(
+            "YAML comments, anchors, aliases, tags, and formatting are not preserved",
+        ));
+}

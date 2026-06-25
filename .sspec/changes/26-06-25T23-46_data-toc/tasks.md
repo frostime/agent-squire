@@ -33,11 +33,11 @@ updated: "2026-06-26T00:19+08:00"
 4. BC-3: Run `asq data-toc sample.jsonl --format jsonl` → output shows record groups with representative `first_line` values.
 5. BC-5: Run `asq --print json data-toc sample.json` → JSON envelope includes `ok`, `command`, `data`, `warnings`, and `meta`.
 
-### Phase 2: YAML via yq ⏳
-- [ ] Extend `DataFormat` and CLI help in `src/builtins/data_toc/mod.rs` to support `yaml`.
-- [ ] Add external `yq` detection and YAML-to-JSON conversion path in `src/builtins/data_toc/mod.rs`.
-- [ ] Add YAML compact/JSON metadata noting `format=yaml`, `parsed_as=json`, and approximation warnings.
-- [ ] Add tests in `tests/data_toc.rs` for missing-`yq` behavior and gated YAML conversion behavior.
+### Phase 2: YAML via yq ✅
+- [x] Extend `DataFormat` and CLI help in `src/builtins/data_toc/mod.rs` to support `yaml`.
+- [x] Add external `yq` detection and YAML-to-JSON conversion path in `src/builtins/data_toc/mod.rs`.
+- [x] Add YAML compact/JSON metadata noting `format=yaml`, `parsed_as=json`, and approximation warnings.
+- [x] Add tests in `tests/data_toc.rs` for missing-`yq` behavior and gated YAML conversion behavior.
 **Verification**:
 - Agent: missing `yq` path returns a direct non-zero error for YAML input.
 - Agent: when `yq` is available, YAML input uses the JSON analysis path and marks approximation.
@@ -69,12 +69,12 @@ updated: "2026-06-26T00:19+08:00"
 
 ## Progress
 
-**Overall**: 33%
+**Overall**: 66%
 
 | Phase | Progress | Status |
 |-------|----------|--------|
 | Phase 1 | 7/7 | ✅ |
-| Phase 2 | 0/4 | ⏳ |
+| Phase 2 | 4/4 | ✅ |
 | Phase 3 | 0/5 | ⏳ |
 
 **Recent**:
@@ -86,3 +86,7 @@ updated: "2026-06-26T00:19+08:00"
 - 2026-06-26T00:41+08:00 Verified compact rendering and JSON envelope shape for `data-toc`.
 - 2026-06-26T00:42+08:00 Added `tests/data_toc.rs`; focused `cargo test --test data_toc` passed.
 - 2026-06-26T00:43+08:00 Updated README and changelog for Phase 1 `data-toc`.
+- 2026-06-26T00:54+08:00 Extended `data-toc` CLI surface and help for YAML format; `cargo check` passed.
+- 2026-06-26T00:56+08:00 Added YAML conversion through external `yq`, compatible with `yq -o=json . file` and `yq . file`; sample YAML output verified.
+- 2026-06-26T00:57+08:00 Verified YAML compact and JSON metadata include `format=yaml parsed_as=json`.
+- 2026-06-26T00:58+08:00 Added YAML missing/present `yq` tests; focused `cargo test --test data_toc` passed.
