@@ -1,5 +1,6 @@
 pub mod compose;
 pub mod gather;
+pub mod img;
 pub mod imgweb;
 pub mod info;
 pub mod md_backlinks;

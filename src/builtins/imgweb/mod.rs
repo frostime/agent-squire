@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::cli::CommandContext;
 
 const INDEX_HTML: &str = include_str!("web/index.html");
-const MAX_UPLOAD_MB: usize = 25;
+pub const MAX_UPLOAD_MB: usize = 25;
 
 #[derive(Args, Debug)]
 #[command(

@@ -38,7 +38,7 @@ Agent Squire packages small, predictable local tools behind one CLI:
 | `patch-edit` | `patch` | Apply SEARCH/REPLACE patch blocks. |
 | `compose` | — | Render agent context templates into bounded UTF-8 output. |
 | `gather` | — | Assemble files, trees, globs, and command output into one prompt. |
-| `imgweb` | — | Start a local web UI for composing multi-image prompts. |
+| `img` | — | Save clipboard images or start the image web UI. |
 | `now` | — | Print the current local date and time. |
 | `list` | — | List built-in commands. |
 
@@ -212,13 +212,14 @@ edit> file:src/main.rs        # press Enter to accept
 edit> file:src/main.rs:10-20  # or edit before accepting
 ```
 
-### Compose multi-image prompts
+### Work with images
 
 ```bash
-squire imgweb
+squire img
+squire img --web
 ```
 
-`imgweb` starts a local browser UI for arranging uploaded images and generating a structured prompt.
+`img` saves the current clipboard image as a persistent PNG and prints the local path. Use `img --web` to start the browser UI for arranging uploaded images and generating a structured prompt.
 
 ### Compose agent context
 

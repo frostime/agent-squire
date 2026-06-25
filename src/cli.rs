@@ -114,7 +114,14 @@ pub enum CliCommand {
     Gather(builtins::gather::GatherArgs),
 
     #[command(
+        name = "img",
+        about = "Save clipboard images or start the image web UI"
+    )]
+    Img(builtins::img::ImgArgs),
+
+    #[command(
         name = "imgweb",
+        hide = true,
         about = "Start a local web UI for composing multi-image prompts"
     )]
     ImgWeb(builtins::imgweb::ImgWebArgs),
@@ -188,6 +195,7 @@ fn try_main() -> Result<u8> {
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
         CliCommand::Compose(args) => builtins::compose::run(args, &ctx),
         CliCommand::Gather(args) => builtins::gather::run(args, &ctx),
+        CliCommand::Img(args) => builtins::img::run(args, &ctx),
         CliCommand::ImgWeb(args) => builtins::imgweb::run(args, &ctx),
         CliCommand::Tmp(args) => builtins::tmp::run(args, &ctx),
         CliCommand::Now(_) => builtins::now::run(&ctx),
@@ -215,7 +223,7 @@ fn run_list(ctx: &CommandContext) -> Result<u8> {
     // Collect builtin subcommands from clap metadata
     let builtins: Vec<_> = app
         .get_subcommands()
-        .filter(|cmd| cmd.get_name() != "help")
+        .filter(|cmd| cmd.get_name() != "help" && !cmd.is_hide_set())
         .map(|cmd| {
             let name = cmd.get_name().to_string();
             let aliases: Vec<String> = cmd.get_all_aliases().map(|a| a.to_string()).collect();

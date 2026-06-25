@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.9.0] — 2026-06-25
+
+### Added
+
+- `img` command to save the current clipboard image as a persistent PNG path, with `--web` for the image prompt web UI.
+
+### Changed
+
+- `imgweb` remains executable for compatibility but is hidden from primary command discovery in favor of `img --web`.
+
 ## [v0.8.7] — 2026-06-18
 
 ### Added

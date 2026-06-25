@@ -4,7 +4,7 @@ resolver = "3"
 [package]
 name = "agent-squire"
 authors = ["frostime"]
-version = "0.8.7"
+version = "0.9.0"
 edition = "2024"
 rust-version = "1.85"
 default-run = "squire"
@@ -51,6 +51,11 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal
 tower-http = { version = "0.6", features = ["trace"] }
 open = "5"
 uuid = { version = "1", features = ["v4", "serde"] }
+arboard = "3"
+image = { version = "0.25", default-features = false, features = ["png", "bmp"] }
+
+[target.'cfg(windows)'.dependencies]
+clipboard-win = "5.4"
 
 [dev-dependencies]
 assert_cmd = "2"
