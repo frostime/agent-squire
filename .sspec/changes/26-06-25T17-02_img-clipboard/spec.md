@@ -1,6 +1,6 @@
 ---
 name: img-clipboard
-status: REVIEW
+status: DONE
 change-type: single
 created: 2026-06-25T17:02:39
 reference:
