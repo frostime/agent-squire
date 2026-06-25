@@ -1,4 +1,5 @@
 pub mod compose;
+pub mod data_toc;
 pub mod gather;
 pub mod img;
 pub mod imgweb;

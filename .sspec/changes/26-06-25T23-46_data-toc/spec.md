@@ -1,6 +1,6 @@
 ---
 name: data-toc
-status: PLANNING
+status: DOING
 change-type: single
 created: 2026-06-25T23:46:59
 reference:

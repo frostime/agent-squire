@@ -74,6 +74,13 @@ pub enum CliCommand {
     Toc(builtins::toc::TocArgs),
 
     #[command(
+        name = "data-toc",
+        alias = "datatoc",
+        about = "Show JSON/JSONL structure before reading data"
+    )]
+    DataToc(builtins::data_toc::DataTocArgs),
+
+    #[command(
         name = "md-links",
         alias = "mdlinks",
         about = "Extract Markdown link references"
@@ -189,6 +196,7 @@ fn try_main() -> Result<u8> {
         CliCommand::Tree(args) => builtins::tree::run(args, &ctx),
         CliCommand::Info(args) => builtins::info::run(args, &ctx),
         CliCommand::Toc(args) => builtins::toc::run(args, &ctx),
+        CliCommand::DataToc(args) => builtins::data_toc::run(args, &ctx),
         CliCommand::MdLinks(args) => builtins::md_links::run(args, &ctx),
         CliCommand::MdBacklinks(args) => builtins::md_backlinks::run(args, &ctx),
         CliCommand::ReadRange(args) => builtins::read_range::run(args, &ctx),
