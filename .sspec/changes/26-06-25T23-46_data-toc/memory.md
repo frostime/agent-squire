@@ -48,4 +48,4 @@ All three phases are implemented and the `data-toc` module has been refactored i
 - [2026-06-26T00:57+08:00] Implemented Phase 2 YAML support via external `yq`.
 - [2026-06-26T01:06+08:00] Implemented Phase 3 dynamic keys, smarter JSONL discriminators, improved suggested reads, and `--examples`.
 - [2026-06-26T02:05+08:00] Final validation passed; change status moved to REVIEW.
-- [2026-06-26T02:20+08:00] Refactored monolithic `src/builtins/data_toc/mod.rs` into `mod.rs`, `types.rs`, `analyze.rs`, `render.rs`, `util.rs` while preserving the public `DataTocArgs`/`run` interface and all tests.
+- [2026-06-26T02:20+08:00] Refactored monolithic `src/builtins/data_toc/mod.rs` into `mod.rs`, `types.rs`, `analyze.rs`, `render.rs`, `util.rs`. Subagent review (mimo-plan/mimo-v2.5-pro) confirmed SEMANTICALLY IDENTICAL; fixed two small issues it found (`DataTocArgs` `#[command]` attributes restored, stray `#[allow]` removed). Committed `ec10ca9`.
