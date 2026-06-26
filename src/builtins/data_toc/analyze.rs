@@ -518,7 +518,7 @@ fn summarize_array_values(
 /// 1. ≥ 4 sibling fields (small maps are unlikely to be dynamic).
 /// 2. ≤ 2 distinct structural signatures across all sibling values
 ///    (dynamic keys usually map to the same shape).
-/// 3. Key names look dynamic: ≥ half contain digits, or share a ≥3-char prefix.
+/// 3. Key names look dynamic: at least half contain digits.
 ///
 /// Ref: PRD §8.5 Dynamic Key Compression.
 fn compress_dynamic_fields<'a>(
@@ -554,37 +554,12 @@ fn compress_dynamic_fields<'a>(
 }
 
 /// Return `true` if sibling keys exhibit dynamic naming patterns.
-/// Two heuristics (OR-ed): many keys contain digits, or keys share a long prefix.
 fn dynamic_key_names(fields: &[ObjectFieldValues<'_>]) -> bool {
     let numericish = fields
         .iter()
         .filter(|field| field.key.chars().any(|ch| ch.is_ascii_digit()))
         .count();
-    let shared_prefix = longest_shared_prefix(
-        &fields
-            .iter()
-            .map(|field| field.key.as_str())
-            .collect::<Vec<_>>(),
-    );
-    numericish * 2 >= fields.len() || shared_prefix.len() >= 3
-}
-
-fn longest_shared_prefix(values: &[&str]) -> String {
-    let Some(first) = values.first() else {
-        return String::new();
-    };
-    let mut prefix = String::new();
-    for (index, ch) in first.chars().enumerate() {
-        if values
-            .iter()
-            .all(|value| value.chars().nth(index) == Some(ch))
-        {
-            prefix.push(ch);
-        } else {
-            break;
-        }
-    }
-    prefix
+    numericish * 2 >= fields.len()
 }
 
 /// Extract up to `profile.max_examples` scalar example values.

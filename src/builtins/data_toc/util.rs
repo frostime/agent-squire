@@ -76,9 +76,9 @@ pub(crate) fn exact_shape_count(records: &[JsonlRecord], profile: BudgetProfile)
 /// Build a depth-bounded structural feature set for a JSON value.
 ///
 /// Each feature is `$.path:type` (e.g. `$.error.code:number`).
-/// The signature is sorted, making it order-independent for comparison.
-/// Array items are sampled up to 3 elements to avoid deep arrays dominating
-/// the signature.
+/// The signature is sorted and deduplicated, making it order- and
+/// array-length-independent for comparison. Array item shapes are sampled up
+/// to 3 elements to avoid deep arrays dominating the signature.
 ///
 /// Used for:
 /// - JSONL exact shape grouping (`group_jsonl_records`)
@@ -90,6 +90,7 @@ pub(crate) fn structural_signature(value: &Value, max_depth: usize) -> Vec<Strin
     let mut signature = Vec::new();
     collect_signature(value, "$", 0, max_depth, &mut signature);
     signature.sort();
+    signature.dedup();
     signature
 }
 
@@ -176,7 +177,7 @@ pub(crate) fn suggested_reads_for_json(
 }
 
 pub(crate) fn find_best_array_node(node: &TocNode) -> Option<&TocNode> {
-    let mut best = if node.kind == NodeKind::Array && node.path != "$" {
+    let mut best = if node.kind == NodeKind::Array {
         Some(node)
     } else {
         None

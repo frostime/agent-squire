@@ -1,6 +1,6 @@
 ---
 change: "data-toc"
-updated: "2026-06-26T00:19+08:00"
+updated: "2026-06-26T16:11+08:00"
 ---
 
 # Tasks
@@ -63,7 +63,10 @@ updated: "2026-06-26T00:19+08:00"
 
 ### Feedback Tasks
 
-- (none yet)
+- [x] Add regression coverage for external review findings H1/M1/M3 in `tests/data_toc.rs`.
+- [x] Fix dynamic key compression so shared static prefixes do not erase real field names.
+- [x] Fix structural signatures so JSONL grouping ignores array length for equivalent item shapes.
+- [x] Fix suggested reads for top-level JSON arrays to include slice/projection commands.
 
 ---
 
@@ -95,3 +98,4 @@ updated: "2026-06-26T00:19+08:00"
 - 2026-06-26T01:04+08:00 Improved JSON suggested reads with array projection suggestions.
 - 2026-06-26T01:05+08:00 Verified `--examples` truncates long strings, redacts sensitive-looking values, and remains off by default.
 - 2026-06-26T01:06+08:00 Extended Phase 3 tests for dynamic keys, discriminator labels, suggested reads, and examples; focused `cargo test --test data_toc` passed.
+- 2026-06-26T16:11+08:00 Review feedback H1/M1/M3 reproduced with failing regression tests, fixed, and verified with `cargo test --test data_toc`.

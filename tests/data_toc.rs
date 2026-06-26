@@ -86,6 +86,33 @@ fn data_toc_jsonl_compact_reports_groups_and_first_lines() {
 }
 
 #[test]
+fn data_toc_jsonl_groups_ignore_array_length() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("arrays.jsonl"),
+        concat!(
+            r#"{"items":[1]}"#,
+            "\n",
+            r#"{"items":[1,2]}"#,
+            "\n",
+            r#"{"items":[1,2,3]}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["data-toc", "arrays.jsonl", "--format", "jsonl"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("JSONL records appear homogeneous"))
+        .stdout(predicate::str::contains("shape#1 rows=3 first_line=1"))
+        .stdout(predicate::str::contains("shape#2").not());
+}
+
+#[test]
 fn data_toc_json_output_uses_envelope() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("result.json"), r#"{"runs":[{"id":"a"}]}"#).unwrap();
@@ -195,6 +222,26 @@ fn data_toc_compresses_dynamic_keys() {
 }
 
 #[test]
+fn data_toc_preserves_static_fields_with_shared_prefix() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("scores.json"),
+        r#"{"score_a":1,"score_b":2,"score_c":3,"score_d":4}"#,
+    )
+    .unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["data-toc", "scores.json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("score_a number"))
+        .stdout(predicate::str::contains("score_d number"))
+        .stdout(predicate::str::contains("{dynamic_key}").not());
+}
+
+#[test]
 fn data_toc_splits_same_shape_jsonl_by_discriminator() {
     let dir = tempdir().unwrap();
     fs::write(
@@ -239,6 +286,21 @@ fn data_toc_suggests_json_projection_reads() {
         .stdout(predicate::str::contains(
             "map({config, id, metrics, notes})",
         ));
+}
+
+#[test]
+fn data_toc_suggests_slice_reads_for_top_level_json_arrays() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("rows.json"), r#"[{"id":"a"},{"id":"b"}]"#).unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["data-toc", "rows.json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("jq '[0:5]'"))
+        .stdout(predicate::str::contains("map({id})"));
 }
 
 #[test]

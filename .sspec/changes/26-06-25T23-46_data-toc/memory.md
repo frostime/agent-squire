@@ -1,6 +1,6 @@
 # Memory: data-toc
 
-**Updated**: 2026-06-26T02:20+08:00
+**Updated**: 2026-06-26T16:11+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -19,7 +19,7 @@ This section records the change starting point in git and MUST NOT be edited or 
 
 ## State
 
-All three phases are implemented and the `data-toc` module has been refactored into a cleaner multi-file layout. Validation commands passed.
+All three phases are implemented and the `data-toc` module has been refactored into a cleaner multi-file layout. External review feedback H1/M1/M3 was reproduced, fixed, and verified with focused tests.
 
 ## Key Files
 
@@ -39,6 +39,7 @@ All three phases are implemented and the `data-toc` module has been refactored i
 - [2026-06-25T23:48+08:00] [Constraint] Work is on branch `feat/data-toc`; create WIP checkpoint commits when requested milestones are reached.
 - [2026-06-25T23:48+08:00] [Rejected] Do not implement `data-toc` as an external mapped command; it needs built-in CLI integration, JSON envelope output, and internal aggregation logic.
 - [2026-06-26T00:53+08:00] [Insight] Phase 1 validation passed with `cargo fmt`, `cargo test --test data_toc`, `cargo test`, and `cargo clippy --all-targets --all-features -- -D warnings`.
+- [2026-06-26T16:11+08:00] [Review] Claude H1, M1, and M3 were valid: shared-prefix dynamic key compression erased static fields, structural signatures were array-length-sensitive, and top-level JSON arrays lacked slice/projection suggestions. M2/M4/L* remain unaddressed review observations unless separately accepted.
 
 ## Milestones
 
@@ -49,3 +50,4 @@ All three phases are implemented and the `data-toc` module has been refactored i
 - [2026-06-26T01:06+08:00] Implemented Phase 3 dynamic keys, smarter JSONL discriminators, improved suggested reads, and `--examples`.
 - [2026-06-26T02:05+08:00] Final validation passed; change status moved to REVIEW.
 - [2026-06-26T02:20+08:00] Refactored monolithic `src/builtins/data_toc/mod.rs` into `mod.rs`, `types.rs`, `analyze.rs`, `render.rs`, `util.rs`. Subagent review (mimo-plan/mimo-v2.5-pro) confirmed SEMANTICALLY IDENTICAL; fixed two small issues it found (`DataTocArgs` `#[command]` attributes restored, stray `#[allow]` removed). Committed `ec10ca9`.
+- [2026-06-26T16:11+08:00] Added regression tests for review findings H1/M1/M3; fixed dynamic key false positives, JSONL array-shape grouping, and top-level JSON array suggested reads.
