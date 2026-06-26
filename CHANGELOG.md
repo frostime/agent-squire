@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.9.1] — 2026-06-26
+
+### Added
+
+- `data-toc` command (alias `datatoc`) to preview JSON/YAML/JSONL structure with bounded scans, array index compression, dynamic key compression, JSONL record groups, optional redacted examples, and an agent-facing `--prompt` guide.
+
+
 ## [v0.9.0] — 2026-06-25
 
 ### Added
@@ -216,6 +223,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+[v0.9.1]: https://github.com/frostime/agent-squire/compare/v0.9.0...v0.9.1
+[v0.9.0]: https://github.com/frostime/agent-squire/compare/v0.8.5...v0.9.0
 [v0.8.5]: https://github.com/frostime/agent-squire/compare/v0.8.4...v0.8.5
 [v0.8.4]: https://github.com/frostime/agent-squire/compare/v0.8.3...v0.8.4
 [v0.8.3]: https://github.com/frostime/agent-squire/compare/v0.8.1...v0.8.3
