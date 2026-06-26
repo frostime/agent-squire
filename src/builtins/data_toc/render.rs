@@ -85,6 +85,11 @@ fn render_node(node: &TocNode, prefix: &str, is_last: bool) {
     render_children(node, &next_prefix);
 }
 
+/// Filter out children that would add visual noise without information.
+///
+/// Scalar arrays like `array<string>` have a single `[] string` child that
+/// just repeats what the parent label already says (`array<string>`).
+/// Collapsing this avoids the reader seeing a redundant indirection.
 fn renderable_children(node: &TocNode) -> Vec<&TocNode> {
     if node.kind == NodeKind::Array
         && node.children.len() == 1

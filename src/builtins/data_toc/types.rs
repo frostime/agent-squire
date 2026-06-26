@@ -254,7 +254,9 @@ pub(crate) struct RecordGroup {
 
 #[derive(Debug)]
 pub(crate) struct BuildState {
+    /// Monotonic: once `true`, stays `true`. Drives `DataTocData.complete`.
     pub(crate) truncated: bool,
+    /// Deduplicated warning strings appended to output notes.
     pub(crate) warnings: Vec<String>,
 }
 
@@ -266,6 +268,8 @@ impl BuildState {
         }
     }
 
+    /// Record a warning without marking the scan as truncated.
+    /// Used for non-lossy observations like dynamic key compression.
     pub(crate) fn warn(&mut self, warning: impl Into<String>) {
         let warning = warning.into();
         if !self.warnings.contains(&warning) {
@@ -273,6 +277,9 @@ impl BuildState {
         }
     }
 
+    /// Record a warning AND mark the scan as truncated.
+    /// Used when budget limits cause structural information loss
+    /// (depth limit, child limit, array item limit, line limit, group limit).
     pub(crate) fn truncate(&mut self, warning: impl Into<String>) {
         self.truncated = true;
         self.warn(warning);

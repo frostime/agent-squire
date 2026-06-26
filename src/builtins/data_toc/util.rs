@@ -73,6 +73,19 @@ pub(crate) fn exact_shape_count(records: &[JsonlRecord], profile: BudgetProfile)
         .len()
 }
 
+/// Build a depth-bounded structural feature set for a JSON value.
+///
+/// Each feature is `$.path:type` (e.g. `$.error.code:number`).
+/// The signature is sorted, making it order-independent for comparison.
+/// Array items are sampled up to 3 elements to avoid deep arrays dominating
+/// the signature.
+///
+/// Used for:
+/// - JSONL exact shape grouping (`group_jsonl_records`)
+/// - Shape count estimation (`shape_count`, `exact_shape_count`)
+/// - Dynamic key compression heuristic (`compress_dynamic_fields`)
+///
+/// Ref: PRD §8.4.1 Per-row structural features.
 pub(crate) fn structural_signature(value: &Value, max_depth: usize) -> Vec<String> {
     let mut signature = Vec::new();
     collect_signature(value, "$", 0, max_depth, &mut signature);

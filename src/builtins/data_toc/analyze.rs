@@ -181,6 +181,9 @@ pub(crate) fn analyze_jsonl(
         ));
     }
 
+    // Collect references for the virtual array summarizer.
+    // `sampled_lines` counts all lines read (including empty ones that were
+    // skipped above); `records.len()` counts only successfully parsed records.
     let values = records
         .iter()
         .map(|record| &record.value)
@@ -253,6 +256,17 @@ pub(crate) fn analyze_jsonl(
 // Recursive value summarizers
 // ---------------------------------------------------------------------------
 
+/// Recursively walk a JSON value tree, building a bounded [`TocNode`] tree.
+///
+/// Contract:
+/// - `depth >= profile.max_depth` → truncate (not error), mark `state.truncated`.
+/// - Empty `values` → return a `Null` node (caller should guard before calling).
+/// - `include_examples` propagates unchanged through recursion.
+/// - `presence` is `Some` only inside sampled arrays where not all parents have
+///   this field.
+///
+/// Called from `analyze_json_value` (single root value) and `analyze_jsonl`
+/// (all sampled records as virtual array elements).
 #[allow(clippy::too_many_arguments)]
 fn summarize_values(
     name: &str,
@@ -497,6 +511,16 @@ fn summarize_array_values(
 // Dynamic key compression and example extraction
 // ---------------------------------------------------------------------------
 
+/// Heuristic: collapse sibling object keys that look like dynamic map keys
+/// (e.g. `user_001`, `user_002`, …) into a single `{dynamic_key}` placeholder.
+///
+/// Triggers only when:
+/// 1. ≥ 4 sibling fields (small maps are unlikely to be dynamic).
+/// 2. ≤ 2 distinct structural signatures across all sibling values
+///    (dynamic keys usually map to the same shape).
+/// 3. Key names look dynamic: ≥ half contain digits, or share a ≥3-char prefix.
+///
+/// Ref: PRD §8.5 Dynamic Key Compression.
 fn compress_dynamic_fields<'a>(
     fields: &[ObjectFieldValues<'a>],
     path: &str,
@@ -529,6 +553,8 @@ fn compress_dynamic_fields<'a>(
     None
 }
 
+/// Return `true` if sibling keys exhibit dynamic naming patterns.
+/// Two heuristics (OR-ed): many keys contain digits, or keys share a long prefix.
 fn dynamic_key_names(fields: &[ObjectFieldValues<'_>]) -> bool {
     let numericish = fields
         .iter()
@@ -561,6 +587,10 @@ fn longest_shared_prefix(values: &[&str]) -> String {
     prefix
 }
 
+/// Extract up to `profile.max_examples` scalar example values.
+/// Returns empty when `include_examples` is false.
+/// Composite types (objects, arrays) are skipped — only scalars produce examples.
+/// Ref: design principle "structure first, values hidden by default".
 fn example_values(
     values: &[&Value],
     include_examples: bool,
@@ -577,6 +607,8 @@ fn example_values(
         .collect()
 }
 
+/// Format a single scalar as a displayable example string.
+/// Returns `None` for objects/arrays (not useful as inline examples).
 fn example_value(value: &Value) -> Option<String> {
     match value {
         Value::Null => Some("null".to_string()),
@@ -587,6 +619,14 @@ fn example_value(value: &Value) -> Option<String> {
     }
 }
 
+/// Redact sensitive-looking strings, then truncate long ones.
+///
+/// Redaction patterns (case-insensitive substring match):
+/// `token`, `secret`, `password`, `apikey`, `api_key`, `@` (email-like).
+/// Strategy: over-redact rather than under-redact — false positives are
+/// acceptable because examples are optional and agents can read originals.
+///
+/// Truncation: strings > 32 chars are cut with a `…` suffix.
 fn redact_and_truncate(text: &str) -> String {
     const MAX_CHARS: usize = 32;
     let lower = text.to_ascii_lowercase();
@@ -612,6 +652,17 @@ fn redact_and_truncate(text: &str) -> String {
 // JSONL record grouping and discriminator labels
 // ---------------------------------------------------------------------------
 
+/// Two-stage JSONL grouping:
+/// 1. **Exact shape grouping** — records with identical structural signatures
+///    (depth-bounded `$.field:type` feature sets) go into the same group.
+/// 2. **Discriminator split** — within each shape group, check if a candidate
+///    field (`type`, `kind`, `event_type`, …) cleanly separates sub-groups.
+///    If so, split and label as `type=error` etc.
+///
+/// Overflow groups beyond `profile.max_groups` collapse into a single `other`
+/// bucket with a `minor_shapes≈N` shape note.
+///
+/// Ref: PRD §8.4 JSONL Structural Clustering.
 fn group_jsonl_records(
     records: &[JsonlRecord],
     profile: BudgetProfile,
@@ -726,6 +777,15 @@ fn split_by_discriminator(records: &[JsonlRecord], group: ShapeGroup) -> Vec<Lab
     }]
 }
 
+/// Find a field that explains the structural grouping.
+///
+/// Logic (from PRD §8.4.4): "先看结构是否形成组；再看某个字段是否能够解释这些组。"
+/// We iterate CANDIDATES in priority order. For each, check if ALL records in
+/// the shape group have that field with a scalar value. If yes, return the
+/// field name and the map of value→record-indexes. The caller uses this to
+/// either split a multi-value group or label a single-value group.
+///
+/// CANDIDATES order = priority: `type` is checked before `event_type`, etc.
 fn discriminator_values(
     records: &[JsonlRecord],
     group: &ShapeGroup,
