@@ -1,6 +1,6 @@
 # Memory: data-toc
 
-**Updated**: 2026-06-26T02:05+08:00
+**Updated**: 2026-06-26T02:20+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -19,7 +19,7 @@ This section records the change starting point in git and MUST NOT be edited or 
 
 ## State
 
-All three phases are implemented and the change is in REVIEW status. Validation commands passed.
+All three phases are implemented and the `data-toc` module has been refactored into a cleaner multi-file layout. Validation commands passed.
 
 ## Key Files
 
@@ -48,3 +48,4 @@ All three phases are implemented and the change is in REVIEW status. Validation 
 - [2026-06-26T00:57+08:00] Implemented Phase 2 YAML support via external `yq`.
 - [2026-06-26T01:06+08:00] Implemented Phase 3 dynamic keys, smarter JSONL discriminators, improved suggested reads, and `--examples`.
 - [2026-06-26T02:05+08:00] Final validation passed; change status moved to REVIEW.
+- [2026-06-26T02:20+08:00] Refactored monolithic `src/builtins/data_toc/mod.rs` into `mod.rs`, `types.rs`, `analyze.rs`, `render.rs`, `util.rs` while preserving the public `DataTocArgs`/`run` interface and all tests.
