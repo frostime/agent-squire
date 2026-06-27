@@ -10,6 +10,57 @@ use serde::Serialize;
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
+const TREE_PROMPT: &str = r#"# Squire file-tree guide
+
+`asq file-tree` displays a compact project directory tree for codebase orientation.
+
+## Flags
+
+| Flag | Purpose |
+|------|---------|
+| `-d N` / `--depth N` | Max tree depth (default: unlimited) |
+| `--dirs-only` | Directories only, omit files |
+| `--show-size` | Show file sizes |
+| `--detail` | Show line/char counts for text files |
+| `--no-gitignore` | Include gitignored files |
+| `-o PATH` | Write output to file |
+
+## CLI Usage (for AGENT)
+
+```bash
+# Quick overview (2 levels deep)
+asq file-tree . -d 2
+
+# High-level structure only
+asq file-tree . --dirs-only
+
+# Subdirectory with file details
+asq file-tree src --detail
+
+# Multiple paths
+asq file-tree src tests docs -d 3
+
+# Include hidden/ignored files
+asq file-tree . --no-gitignore
+
+# Save to file
+asq file-tree . -d 3 -o tree.md
+```
+
+## Typical Workflow
+
+1. **Orient**: `asq file-tree . -d 2` — understand repo layout
+2. **Drill down**: `asq file-tree src/module --detail` — see file sizes/lines
+3. **Read**: `asq read-range <file> -r <range>` — read specific content
+
+## Tips
+
+- Default respects `.gitignore` and skips `.git`, `node_modules`, `__pycache__`, etc.
+- Use `--depth` to keep context small; AGENT context is precious.
+- `--detail` adds line/char counts — useful for deciding what to read next.
+- JSON mode (`--print json`) returns structured data with stats.
+"#;
+
 #[derive(Args, Debug)]
 #[command(
     long_about = "Display a compact project directory tree for orientation before reading files.\n\nUse this when an agent needs to understand repository layout, choose likely files, or inspect a subdirectory without dumping file contents. By default it respects nested .gitignore files and hides common noise such as .git, node_modules, __pycache__, and cache directories.\n\nUse `--depth` to keep context small, `--dirs-only` for high-level structure, and `--detail` only when line/character counts are useful for deciding what to read next.",
@@ -52,6 +103,9 @@ pub struct TreeArgs {
         help = "Write compact output to a file"
     )]
     pub output: Option<PathBuf>,
+
+    #[arg(long, help = "Print the agent-facing usage guide")]
+    pub prompt: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,6 +131,11 @@ const ALWAYS_SKIP: &[&str] = &[
 ];
 
 pub fn run(args: TreeArgs, ctx: &CommandContext) -> Result<u8> {
+    if args.prompt {
+        println!("{TREE_PROMPT}");
+        return Ok(0);
+    }
+
     let paths = if args.paths.is_empty() {
         vec![PathBuf::from(".")]
     } else {

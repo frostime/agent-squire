@@ -9,6 +9,62 @@ use serde::Serialize;
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
+const READ_RANGE_PROMPT: &str = r#"# Squire read-range guide
+
+`asq read-range` reads specific line ranges from a text file. Cross-platform replacement for `sed -n` / PowerShell line slicing.
+
+## Range Syntax (1-based, inclusive)
+
+| Form | Meaning |
+|------|---------|
+| `N` | Single line N |
+| `A-B` | Lines A through B |
+| `N~K` | K lines before and after N (context window) |
+| `start-end` | Entire file |
+| `start-N` | Lines 1 through N |
+| `N-end` | Lines N through EOF |
+
+Repeat `-r` for multiple ranges; order and duplicates are preserved.
+
+## CLI Usage (for AGENT)
+
+```bash
+# Single line
+asq read-range src/main.rs -r 42
+
+# Range
+asq read-range src/main.rs -r 10-30
+
+# Context window (20 lines around line 120)
+asq read-range src/main.rs -r 120~20
+
+# Multiple ranges
+asq read-range src/main.rs -r 10-20 -r 50-60
+
+# Head / tail
+asq read-range src/main.rs --head 20
+asq read-range src/main.rs --tail 30
+
+# Entire file (no flags)
+asq read-range src/main.rs
+
+# Without line numbers
+asq read-range src/main.rs -r 10-30 --no-number
+```
+
+## Typical Workflow
+
+1. **Discover**: `asq md-toc README.md` or `rg -n "pattern" file.rs`
+2. **Read**: `asq read-range file.rs -r <start>-<end>`
+
+## Tips
+
+- Line numbers are always 1-based.
+- `start` and `end` are valid range anchors.
+- Ranges are clamped to file boundaries (no error on overshoot).
+- Use `--print json` for machine-readable output with metadata.
+"#;
+
 const LONG_ABOUT: &str = r#"Read known 1-based line ranges from one text file.
 
 Use this when an agent already knows the exact line numbers to inspect and needs a cross-platform replacement for `sed -n` / PowerShell line slicing. It does not search text, parse syntax, or find symbols; use `rg`, `md-toc`, or language tooling for discovery first.
@@ -36,7 +92,7 @@ Without --range/--head/--tail, the entire file is printed."#;
   squire --print json range src/cli.rs -r 10-30"#)]
 pub struct ReadRangeArgs {
     #[arg(help = "Text file to read")]
-    pub file: PathBuf,
+    pub file: Option<PathBuf>,
 
     #[arg(
         short = 'r',
@@ -67,6 +123,9 @@ pub struct ReadRangeArgs {
         help = "Do not display line numbers in output"
     )]
     pub no_number: bool,
+
+    #[arg(long, help = "Print the agent-facing usage guide")]
+    pub prompt: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -121,6 +180,15 @@ struct TextFile {
 }
 
 pub fn run(args: ReadRangeArgs, ctx: &CommandContext) -> Result<u8> {
+    if args.prompt {
+        println!("{READ_RANGE_PROMPT}");
+        return Ok(0);
+    }
+
+    let file = args.file.ok_or_else(|| {
+        anyhow::anyhow!("FILE argument is required (use --prompt for usage guide)")
+    })?;
+
     let has_range = !args.ranges.is_empty();
     let has_head = args.head.is_some();
     let has_tail = args.tail.is_some();
@@ -134,7 +202,7 @@ pub fn run(args: ReadRangeArgs, ctx: &CommandContext) -> Result<u8> {
         bail!("--range, --head, and --tail are mutually exclusive");
     }
 
-    let text = read_text_file(&args.file)?;
+    let text = read_text_file(&file)?;
     if text.lines.is_empty() {
         bail!("{} has no lines", text.path);
     }

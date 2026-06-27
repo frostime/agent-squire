@@ -81,6 +81,39 @@ Next, xxx
 ```
 
 WARN: Multi-blocks targeting the same file are matched against the original content. Overlapping matches cause all related blocks to fail.
+
+## CLI Usage (for AGENT)
+
+```
+# Pipe via stdin (recommended for agent)
+echo '<patch_text>' | asq patch-edit --stdin --yes
+
+# From file (use asq tmp for temp file)
+asq tmp patch.md          # → prints path, e.g. /tmp/asq-temp/20260627-abcdef-patch.md , auto-add time prefix
+# write patch content to that file, then:
+asq patch-edit -f <path> --yes
+
+# Literal positional (short patches only)
+asq patch-edit '# src/foo.rs
+<<<<<<< SEARCH
+old
+=======
+new
+>>>>>>> REPLACE' --yes
+
+# Dry-run first (recommended)
+asq patch-edit --stdin --dry-run < patch.md
+```
+
+**Flags**:
+- `--yes` / `-y` — required for writes (safety gate)
+- `--dry-run` — validate without modifying files
+- `--smart-indent` — ignore indent differences in SEARCH matching
+
+**Tips**:
+- For multi-file edits, bundle all blocks in one invocation.
+- Same-file blocks are matched against original content; avoid overlapping ranges.
+- Prefer `--dry-run` first for complex patches.
 "#;
 
 #[derive(Args, Debug)]

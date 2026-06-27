@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.9.2] — 2026-06-27
+
+### Added
+
+- `patch-edit --prompt`: appended CLI usage guide for AGENT, covering stdin/file input, `asq tmp` workflow, and safety flags.
+- `read-range --prompt`: agent-facing usage guide with range syntax reference, typical workflow, and tips.
+- `file-tree --prompt`: agent-facing usage guide with flag reference, typical workflow, and tips.
+
 ## [v0.9.1] — 2026-06-26
 
 ### Added
