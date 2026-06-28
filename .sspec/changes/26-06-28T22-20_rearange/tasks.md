@@ -56,6 +56,23 @@ updated: "2026-06-28"
 3. BC-3: 对 CRLF 文件执行 move 后,文件仍为 CRLF。
 4. BC-4: 重叠 chunk → 退出码 1,`OVERLAPPING_CHUNKS`,文件未改。
 
+### Feedback Tasks (→ [001-review-fixes--dsl-grammar-formalization](./revisions/001-review-fixes--dsl-grammar-formalization.md)) ✅
+- [x] `model.rs`: add `ErrorCode::NonEmptyGap` (`NON_EMPTY_GAP`)
+- [x] `plan.rs`: `gap=error` returns `NON_EMPTY_GAP` (not `InvalidSpec`); `validate_set` rejects duplicate names → `REARRANGE_SET_MISMATCH`
+- [x] `mod.rs`: honor `--dry-run` override → `write = args.yes && !args.dry_run`
+- [x] `output.rs`: serialize `chunks` + `action` into JSON `data` (BC-5); `--yes` no-op renders `(no-op)` not `(dry-run)`
+- [x] `parser.rs`: enforce chunk-name identifier rule `[A-Za-z_][A-Za-z0-9_]*` + keyword reservation; reject illegal names with `INVALID_SPEC`
+- [x] `prompt.md` + design §2.1: embed formalized EBNF; note `#` is line-leading only
+- [x] `tests/rearrange.rs`: add cases — JSON carries chunks/action; `NON_EMPTY_GAP`; duplicate name; `--dry-run --yes` no write; no-op label; leading-digit/keyword name rejected
+
+**Verification**:
+- Agent: `cargo test` all green; `cargo clippy --all-targets --all-features -- -D warnings` clean; `cargo fmt --check` clean.
+
+**User Check**:
+1. BC-5: `asq rearrange --json --stdin < spec` → `data.action` and `data.chunks` present and structured.
+2. BC-4: `gap=error` with hidden lines → stderr `NON_EMPTY_GAP`, exit 1, file unchanged.
+3. BC-1: `asq rearrange --stdin --dry-run --yes < spec` → file NOT written.
+
 ---
 
 ## Progress

@@ -198,7 +198,7 @@ fn plan_rearrange(
 
     if matches!(gap, Gap::Error) && gaps.iter().any(|(_, _, g)| !g.is_empty()) {
         return Err(err(
-            ErrorCode::InvalidSpec,
+            ErrorCode::NonEmptyGap,
             "non-empty gap between chunks (gap=error)",
         ));
     }
@@ -295,6 +295,13 @@ fn validate_set(from: &[String], to: &[String]) -> Result<()> {
     let mut t = to.to_vec();
     f.sort();
     t.sort();
+    // Duplicate names make slot assignment ambiguous; `from`/`to` are sets.
+    if f.windows(2).any(|w| w[0] == w[1]) || t.windows(2).any(|w| w[0] == w[1]) {
+        return Err(err(
+            ErrorCode::RearrangeSetMismatch,
+            "rearrange chunk names must be unique",
+        ));
+    }
     if f != t {
         return Err(err(
             ErrorCode::RearrangeSetMismatch,

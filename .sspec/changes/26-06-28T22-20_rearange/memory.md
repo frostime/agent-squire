@@ -37,7 +37,9 @@ Implementation complete; all 4 phases done. `cargo test` 157 pass, clippy clean,
 - [2026-06-28] [Gotcha] textio self-contained, does NOT reuse `patch_edit/io.rs` (kept surgical; ~40 lines encoding-detect duplicated by design choice #4).
 - [2026-06-28] [Decision] move anchor on block boundary (before start / after end) = no-op, allowed; only strictly-interior anchor → ANCHOR_INSIDE_MOVED_CHUNK.
 - [2026-06-28] [Gotcha] bash `./target/debug/squire.exe` on this machine resolves to a STALE installed squire on PATH (`/g/Enviroment/Rust/.cargo/bin`). Verify the freshly-built binary via `cmd.exe //c "target\debug\squire.exe ..."` instead.
+- [2026-06-28] [rev-001] Review (deepseek-v4-pro xhigh) found 4 conformance defects + 5 DSL ambiguities. Fixed: JSON `data` now carries `chunks`+`action` (BC-5); `gap=error`→new `NON_EMPTY_GAP` code; duplicate rearrange names→`REARRANGE_SET_MISMATCH`; `--dry-run` overrides `--yes` (`write = yes && !dry_run`); `--yes` no-op labeled `(no-op)`; chunk names constrained to identifier `[A-Za-z_][A-Za-z0-9_]*` + reserved keywords (disambiguates region-vs-name and ` to ` separator). DSL formalized as EBNF in design §2.1 + prompt.md.
 
 ## Milestones
 
 - [2026-06-28T22:50] rearrange v1 implemented across 4 phases; tests/clippy/fmt green; live gap=slot output matches design Mock C.
+- [2026-06-28T23:20] rev-001 applied: 4 review fixes + DSL EBNF formalization; 16 integration tests green, clippy/fmt clean; 3 rev User Checks verified live via `cargo s`.

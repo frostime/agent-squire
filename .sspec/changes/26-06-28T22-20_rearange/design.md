@@ -46,7 +46,37 @@ rearrange <name>, <name>, ... => <name>, <name>, ...  [gap=slot|drop|error]
 设计取舍:
 - `move/copy/delete` 只作用单区间 → 允许**内联** `10-20`,免去声明,最省。也可引用已声明 chunk。
 - `rearrange` 需按名字置换 → **必须**用 `chunk` 声明命名。
-- `from` 列表语义 = 参与置换的 chunk **集合**(顺序不敏感,物理槽位由行号升序决定);`to` = 新顺序。`from` 与 `to` 集合不等 → `REARRANGE_SET_MISMATCH`。
+- `from` 列表语义 = 参与置换的 chunk **集合**(顺序不敏感,物理槽位由行号升序决定);`to` = 新顺序。`from` 与 `to` 集合不等 → `REARRANGE_SET_MISMATCH`;名字重复亦 → `REARRANGE_SET_MISMATCH`。
+
+## 2.1 DSL 形式文法(rev-001)
+
+> 原 §2 散文留有歧义(review 发现);此处固化为 EBNF + 词法规则。`prompt.md` 同步。
+
+```ebnf
+spec       = { line } ;
+line       = blank | comment | file-decl | chunk-decl | action ;
+comment    = "#" , { any } ;                  (* 仅整行;行内 # 视为字面量 *)
+file-decl  = "file" , ws , path ;             (* 恰好一个 *)
+chunk-decl = "chunk" , ws , name , "=" , range ;
+action     = move | copy | delete | rearrange ;  (* 恰好一条 *)
+move       = "move"   , ws , region , ws , "to" , ws , anchor ;
+copy       = "copy"   , ws , region , ws , "to" , ws , anchor ;
+delete     = "delete" , ws , region ;
+rearrange  = "rearrange" , ws , namelist , "=>" , namelist , [ ws , "gap=" , gap ] ;
+region     = range | name ;                   (* 首字符为数字时按 range 解析 *)
+range      = number | number , "-" , number ; (* 1-based inclusive, start <= end *)
+anchor     = "start" | "end" | "before" , ws , number | "after" , ws , number ;
+namelist   = name , { "," , name } ;
+gap        = "slot" | "drop" | "error" ;
+name       = ( letter | "_" ) , { letter | digit | "_" } ;  (* 标识符,非关键字 *)
+number     = nonzero-digit , { digit } ;       (* >= 1 *)
+```
+
+词法规则(消歧依据):
+- **chunk 名 = 标识符** `[A-Za-z_][A-Za-z0-9_]*`。首字符强制为字母/下划线,使其与内联 range(数字开头)不相交,杜绝 `1A` 被误解析为区间。
+- **关键字保留**,不可作 chunk 名:`file chunk move copy delete rearrange to start end before after gap`。消除 ` to ` 分隔符冲突与 `to`/`gap` 同名歧义。
+- 非法名(违反标识符规则或撞关键字)→ `INVALID_SPEC`(声明时即拒)。
+- `#` 仅行首注释,行内 `#` 不剥离。
 
 ## 3. 核心数据模型
 

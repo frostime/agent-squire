@@ -187,3 +187,106 @@ fn prompt_prints_guide() {
         .success()
         .stdout(predicate::str::contains("Squire rearrange format"));
 }
+
+/// rev-001: gap=error uses the dedicated NON_EMPTY_GAP code, not INVALID_SPEC.
+#[test]
+fn gap_error_reports_non_empty_gap() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("a.md");
+    fs::write(&file, "A\nh\nB\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--yes"])
+        .write_stdin("file a.md\nchunk A = 1-1\nchunk B = 3-3\nrearrange A, B => B, A gap=error")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("NON_EMPTY_GAP"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "A\nh\nB\n");
+}
+
+/// rev-001: duplicate chunk names in a rearrange list are rejected.
+#[test]
+fn duplicate_rearrange_names_rejected() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "A\nB\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--yes"])
+        .write_stdin("file a.md\nchunk A = 1-1\nchunk B = 2-2\nrearrange A, A => A, A")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("REARRANGE_SET_MISMATCH"));
+}
+
+/// rev-001: --dry-run overrides --yes; nothing is written.
+#[test]
+fn dry_run_overrides_yes() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("a.md");
+    fs::write(&file, "1\n2\n3\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--dry-run", "--yes"])
+        .write_stdin("file a.md\nmove 1-1 to end")
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(&file).unwrap(), "1\n2\n3\n");
+}
+
+/// rev-001: --yes on a no-op reports `(no-op)`, not `(dry-run)`.
+#[test]
+fn yes_noop_labeled_no_op() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "1\n2\n3\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--yes"])
+        .write_stdin("file a.md\nmove 1-3 to after 3")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("(no-op)"));
+}
+
+/// rev-001: a chunk name with a leading digit is rejected at declaration.
+#[test]
+fn leading_digit_chunk_name_rejected() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "1\n2\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--yes"])
+        .write_stdin("file a.md\nchunk 1A = 1-1\ndelete 1A")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("INVALID_SPEC"));
+}
+
+/// rev-001: JSON data carries structured action (and chunks for rearrange).
+#[test]
+fn json_data_carries_action_and_chunks() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "A\nB\nC\n").unwrap();
+
+    let out = squire()
+        .current_dir(dir.path())
+        .args(["--json", "rearrange", "--stdin"])
+        .write_stdin(
+            "file a.md\nchunk A = 1-1\nchunk B = 2-2\nchunk C = 3-3\nrearrange A, B, C => C, B, A",
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["data"]["action"]["type"], "rearrange");
+    assert_eq!(json["data"]["action"]["to"][0], "C");
+    assert_eq!(json["data"]["action"]["gap"], "slot");
+    assert_eq!(json["data"]["chunks"]["A"]["range"], "1-1");
+    assert_eq!(json["data"]["chunks"]["A"]["lines"], 1);
+}

@@ -7,6 +7,9 @@ reference:
 - source: .sspec/requests/26-06-28T18-48_rearange.md
   type: request
   note: Linked from request
+- source: .sspec/changes/26-06-28T22-20_rearange/revisions/001-review-fixes--dsl-grammar-formalization.md
+  type: revision
+  note: Review fixes (JSON data, NON_EMPTY_GAP, --dry-run, no-op label) + DSL EBNF formalization
 ---
 
 # rearange

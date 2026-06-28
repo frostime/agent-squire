@@ -74,11 +74,54 @@ fn parse_chunk(rest: &str) -> Result<ChunkDef> {
         .split_once('=')
         .ok_or_else(|| err(ErrorCode::InvalidSpec, format!("chunk needs `=`: {rest}")))?;
     let (start, end) = parse_range(range.trim())?;
+    let name = name.trim();
+    validate_name(name)?;
     Ok(ChunkDef {
-        name: name.trim().to_string(),
+        name: name.to_string(),
         start,
         end,
     })
+}
+
+/// Reserved words that may not be used as chunk names; they would collide with
+/// the keyword-driven parse of directives, actions, anchors, and gap policy.
+const KEYWORDS: &[&str] = &[
+    "file",
+    "chunk",
+    "move",
+    "copy",
+    "delete",
+    "rearrange",
+    "to",
+    "start",
+    "end",
+    "before",
+    "after",
+    "gap",
+];
+
+/// SPEC: chunk names are identifiers `[A-Za-z_][A-Za-z0-9_]*` and not keywords.
+/// The leading-letter rule keeps names disjoint from inline ranges (which start
+/// with a digit), so a name is never silently mis-parsed as a range.
+fn validate_name(name: &str) -> Result<()> {
+    let mut chars = name.chars();
+    let valid_head = chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+    let valid_tail = chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !valid_head || !valid_tail {
+        return Err(err(
+            ErrorCode::InvalidSpec,
+            format!("invalid chunk name `{name}`: must match [A-Za-z_][A-Za-z0-9_]*"),
+        ));
+    }
+    if KEYWORDS.contains(&name) {
+        return Err(err(
+            ErrorCode::InvalidSpec,
+            format!("`{name}` is a reserved keyword"),
+        ));
+    }
+    Ok(())
 }
 
 fn parse_action(line: &str) -> Result<Action> {

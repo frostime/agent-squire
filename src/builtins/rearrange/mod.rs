@@ -61,7 +61,7 @@ pub fn run(args: RearrangeArgs, ctx: &CommandContext) -> Result<u8> {
         return Ok(0);
     }
 
-    let write = args.yes;
+    let write = args.yes && !args.dry_run;
     match plan::execute(&spec_text, &ctx.cwd, write) {
         Ok(outcome) => {
             output::render(&outcome, write, ctx.print);

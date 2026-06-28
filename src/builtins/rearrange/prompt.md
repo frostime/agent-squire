@@ -11,22 +11,28 @@ All ranges and anchors resolve against the original file snapshot.
 
 ## DSL
 
-```text
-file <path>
-
-chunk <name> = <N>            # single line
-chunk <name> = <A>-<B>        # range
-
-# exactly one of:
-move   <range-or-chunk> to <anchor>
-copy   <range-or-chunk> to <anchor>
-delete <range-or-chunk>
-rearrange <names> => <names> [gap=slot|drop|error]
+```ebnf
+spec       = { line } ;
+line       = blank | comment | file-decl | chunk-decl | action ;
+comment    = "#" , { any } ;                  (* whole line only; inline # is literal *)
+file-decl  = "file" , ws , path ;             (* exactly one per spec *)
+chunk-decl = "chunk" , ws , name , "=" , range ;
+action     = move | copy | delete | rearrange ;  (* exactly one per spec *)
+move       = "move"   , ws , region , ws , "to" , ws , anchor ;
+copy       = "copy"   , ws , region , ws , "to" , ws , anchor ;
+delete     = "delete" , ws , region ;
+rearrange  = "rearrange" , ws , namelist , "=>" , namelist , [ ws , "gap=" , gap ] ;
+region     = range | name ;                   (* parsed as range iff first char is a digit *)
+range      = number | number , "-" , number ; (* 1-based inclusive, start <= end *)
+anchor     = "start" | "end" | "before" , ws , number | "after" , ws , number ;
+namelist   = name , { "," , name } ;
+gap        = "slot" | "drop" | "error" ;
+name       = ( letter | "_" ) , { letter | digit | "_" } ;  (* identifier, not a keyword *)
+number     = nonzero-digit , { digit } ;       (* >= 1 *)
 ```
 
-`<range-or-chunk>`: an inline range (`40-90`) or a declared chunk name.
-`<anchor>`: `start` | `end` | `before <N>` | `after <N>`.
-Blank lines and lines starting with `#` are ignored.
+Keywords reserved (cannot be chunk names): `file chunk move copy delete
+rearrange to start end before after gap`.
 
 ## Gap (rearrange only)
 

@@ -34,6 +34,8 @@ pub fn render_error(err: &RearrangeError, mode: PrintMode) {
 fn render_compact(outcome: &Outcome, written: bool) {
     let state = if written && outcome.changed {
         "written"
+    } else if written {
+        "no-op"
     } else {
         "dry-run"
     };
@@ -103,19 +105,67 @@ fn render_gap(gap: &GapReport) {
 }
 
 fn render_json(outcome: &Outcome, written: bool) {
+    let mut data = serde_json::json!({
+        "written": written && outcome.changed,
+        "changed": outcome.changed,
+        "file": outcome.file_path,
+        "action": action_json(&outcome.summary),
+        "diff": diff_text(&outcome.file_path, &outcome.original, &outcome.new_lines),
+    });
+    if let Some(chunks) = chunks_json(&outcome.summary) {
+        data["chunks"] = chunks;
+    }
     let payload = Envelope {
         ok: true,
         command: "rearrange",
-        data: serde_json::json!({
-            "written": written && outcome.changed,
-            "changed": outcome.changed,
-            "file": outcome.file_path,
-            "diff": diff_text(&outcome.file_path, &outcome.original, &outcome.new_lines),
-        }),
+        data,
         warnings: vec![],
         meta: serde_json::json!({}),
     };
     let _ = print_json(&payload);
+}
+
+/// Structured action descriptor (BC-5). Shape varies by action type.
+fn action_json(summary: &Summary) -> serde_json::Value {
+    match summary {
+        Summary::Move { start, end, anchor } => serde_json::json!({
+            "type": "move", "range": format!("{start}-{end}"), "anchor": anchor,
+        }),
+        Summary::Copy { start, end, anchor } => serde_json::json!({
+            "type": "copy", "range": format!("{start}-{end}"), "anchor": anchor,
+        }),
+        Summary::Delete { start, end } => serde_json::json!({
+            "type": "delete", "range": format!("{start}-{end}"),
+        }),
+        Summary::Rearrange { from, to, gap, .. } => serde_json::json!({
+            "type": "rearrange", "from": from, "to": to, "gap": gap_name(gap),
+        }),
+    }
+}
+
+/// Declared chunks keyed by name; present only for `rearrange` (BC-5).
+fn chunks_json(summary: &Summary) -> Option<serde_json::Value> {
+    let Summary::Rearrange { chunks, .. } = summary else {
+        return None;
+    };
+    let map: serde_json::Map<String, serde_json::Value> = chunks
+        .iter()
+        .map(|(name, s, e)| {
+            (
+                name.clone(),
+                serde_json::json!({ "range": format!("{s}-{e}"), "lines": e - s + 1 }),
+            )
+        })
+        .collect();
+    Some(serde_json::Value::Object(map))
+}
+
+fn gap_name(gap: &GapReport) -> &'static str {
+    match gap {
+        GapReport::Slot(_) => "slot",
+        GapReport::Dropped(_) => "drop",
+        GapReport::None => "error",
+    }
 }
 
 /// A minimal whole-file unified diff: old block removed, new block added. This

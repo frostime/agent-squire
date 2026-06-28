@@ -82,6 +82,7 @@ pub enum ErrorCode {
     AnchorOutOfBounds,
     AnchorInsideMovedChunk,
     RearrangeSetMismatch,
+    NonEmptyGap,
     FileNotFound,
 }
 
@@ -97,6 +98,7 @@ impl ErrorCode {
             Self::AnchorOutOfBounds => "ANCHOR_OUT_OF_BOUNDS",
             Self::AnchorInsideMovedChunk => "ANCHOR_INSIDE_MOVED_CHUNK",
             Self::RearrangeSetMismatch => "REARRANGE_SET_MISMATCH",
+            Self::NonEmptyGap => "NON_EMPTY_GAP",
             Self::FileNotFound => "FILE_NOT_FOUND",
         }
     }
