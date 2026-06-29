@@ -111,7 +111,7 @@ pub enum CliCommand {
     #[command(
         name = "rearrange",
         alias = "rearr",
-        about = "Move, copy, delete, or reorder line-range chunks in one file"
+        about = "Rewrite files with the Arrange before/after state-transition DSL"
     )]
     Rearrange(builtins::rearrange::RearrangeArgs),
 

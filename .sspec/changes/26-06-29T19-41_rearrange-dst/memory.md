@@ -1,6 +1,6 @@
 # Memory: rearrange-dst
 
-**Updated**: 2026-06-29T20:11+08:00
+**Updated**: 2026-06-29T21:54+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -20,7 +20,7 @@ A  SPEC.md
 
 ## State
 
-Implementation complete; change is in REVIEW. `asq rearrange` now implements the DST state-transition DSL from `reference/DST-SPEC.md`; old v1 action DSL is removed.
+Implementation complete; change is in REVIEW. External review findings F1-F5 have been fixed. `asq rearrange` now implements the DST state-transition DSL from `reference/DST-SPEC.md`; old v1 action DSL and stale old-v1 model file are removed.
 
 ## Key Files
 
@@ -46,8 +46,11 @@ Implementation complete; change is in REVIEW. `asq rearrange` now implements the
 - [2026-06-29T19:41+08:00] [Decision] `before` coverage accepts numeric EOF ranges when they resolve to the actual file end; prompt should recommend `A-end` as the clearer default.
 - [2026-06-29T19:41+08:00] [Decision] Path prefix conflicts in the same spec should fail to avoid implicit directory state transitions.
 - [2026-06-29T20:11+08:00] [Gotcha] `cargo test rearrange --quiet` filters integration tests by test name; full confidence came from `cargo test --quiet` plus sandbox CLI dry-run/yes checks.
+- [2026-06-29T21:54+08:00] [Decision] External review F2 resolved by treating `arrange slug=path` as slugged arrange syntax (same whitespace-insensitive `=` handling as `share`) to avoid silently creating a literal `slug=path` file.
+- [2026-06-29T21:54+08:00] [Decision] External review F4 resolved with write preparation before persistence and partial-apply risk reporting; full rollback remains out of scope.
 
 ## Milestones
 
 - [2026-06-29T19:41+08:00] Created new `rearrange-dst` change and moved root `SPEC.md` to `reference/DST-SPEC.md`.
 - [2026-06-29T20:11+08:00] Implemented DST rewrite for `asq rearrange`; `cargo test --quiet` (161 tests), clippy, fmt, and sandbox CLI checks passed.
+- [2026-06-29T21:54+08:00] Fixed external review findings F1-F5, deleted stale `model.rs`, added regression tests; `cargo test --quiet` (170 tests), clippy, and fmt passed.

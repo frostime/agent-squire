@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use encoding_rs::{GBK, WINDOWS_1252};
@@ -42,9 +42,28 @@ pub struct TextFile {
     pub trailing_newline: bool,
 }
 
-pub fn read_file(path: &Path) -> Result<TextFile> {
-    let raw = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    let (text, encoding) = decode(&raw);
+#[derive(Debug)]
+pub enum TextIoError {
+    Io(anyhow::Error),
+    Encoding(String),
+}
+
+impl std::fmt::Display for TextIoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(err) => write!(f, "{err:#}"),
+            Self::Encoding(message) => write!(f, "{message}"),
+        }
+    }
+}
+
+impl std::error::Error for TextIoError {}
+
+pub fn read_file(path: &Path) -> std::result::Result<TextFile, TextIoError> {
+    let raw = fs::read(path)
+        .with_context(|| format!("failed to read {}", path.display()))
+        .map_err(TextIoError::Io)?;
+    let (text, encoding) = decode(&raw).map_err(TextIoError::Encoding)?;
     let newline = detect_newline(&text);
     let trailing_newline = text.ends_with('\n');
     let lines = split_lines(&text);
@@ -78,7 +97,25 @@ pub fn render_created(lines: &[String]) -> Vec<u8> {
     text.into_bytes()
 }
 
-pub fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
+pub struct PreparedWrite {
+    path: PathBuf,
+    tmp: tempfile::NamedTempFile,
+}
+
+impl PreparedWrite {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn persist(self) -> Result<()> {
+        self.tmp.persist(&self.path).map_err(|err| {
+            anyhow::anyhow!("failed to persist {}: {}", self.path.display(), err.error)
+        })?;
+        Ok(())
+    }
+}
+
+pub fn prepare_write(path: &Path, bytes: &[u8]) -> Result<PreparedWrite> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
 
@@ -88,9 +125,10 @@ pub fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Ok(meta) = fs::metadata(path) {
         let _ = tmp.as_file().set_permissions(meta.permissions());
     }
-    tmp.persist(path)
-        .map_err(|err| anyhow::anyhow!("failed to persist {}: {}", path.display(), err.error))?;
-    Ok(())
+    Ok(PreparedWrite {
+        path: path.to_path_buf(),
+        tmp,
+    })
 }
 
 pub fn delete_file(path: &Path) -> Result<()> {
@@ -101,25 +139,24 @@ pub fn delete_file(path: &Path) -> Result<()> {
     }
 }
 
-fn decode(raw: &[u8]) -> (String, Encoding) {
+fn decode(raw: &[u8]) -> std::result::Result<(String, Encoding), String> {
     if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        return (
-            String::from_utf8_lossy(&raw[3..]).into_owned(),
-            Encoding::Utf8Bom,
-        );
+        let text = std::str::from_utf8(&raw[3..])
+            .map_err(|err| format!("invalid utf-8 BOM text: {err}"))?;
+        return Ok((text.to_string(), Encoding::Utf8Bom));
     }
     if let Ok(text) = String::from_utf8(raw.to_vec()) {
-        return (text, Encoding::Utf8);
+        return Ok((text, Encoding::Utf8));
     }
     let (text, _, had_errors) = GBK.decode(raw);
     if !had_errors {
-        return (text.into_owned(), Encoding::Gbk);
+        return Ok((text.into_owned(), Encoding::Gbk));
     }
     let (text, _, had_errors) = WINDOWS_1252.decode(raw);
     if !had_errors {
-        return (text.into_owned(), Encoding::Windows1252);
+        return Ok((text.into_owned(), Encoding::Windows1252));
     }
-    (String::from_utf8_lossy(raw).into_owned(), Encoding::Utf8)
+    Err("unsupported text encoding; refusing lossy decode".into())
 }
 
 fn encode(text: &str, encoding: Encoding) -> std::result::Result<Vec<u8>, String> {

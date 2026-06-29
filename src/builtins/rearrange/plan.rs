@@ -14,7 +14,7 @@ use crate::builtins::rearrange::ast::{
 use crate::builtins::rearrange::error::{ErrorCode, RearrangeError, Result};
 use crate::builtins::rearrange::parser;
 use crate::builtins::rearrange::path::{PathResolver, ResolvedPath, reject_prefix_conflicts};
-use crate::builtins::rearrange::textio::{self, TextFile};
+use crate::builtins::rearrange::textio::{self, PreparedWrite, TextFile, TextIoError};
 
 #[derive(Debug, Serialize)]
 pub struct Outcome {
@@ -219,17 +219,13 @@ fn read_snapshot(spec: &ResolvedSpec) -> Result<Snapshot> {
                 format!("share file not found: {}", share.path.display),
             ));
         }
-        let file = textio::read_file(&share.path.abs)
-            .map_err(|e| err(ErrorCode::IoError, e.to_string()))?;
+        let file = read_text_file(&share.path.abs)?;
         files.insert(share.path.key.clone(), Some(file));
     }
 
     for arrange in &spec.arranges {
         let file = if arrange.path.abs.is_file() {
-            Some(
-                textio::read_file(&arrange.path.abs)
-                    .map_err(|e| err(ErrorCode::IoError, e.to_string()))?,
-            )
+            Some(read_text_file(&arrange.path.abs)?)
         } else {
             None
         };
@@ -727,18 +723,76 @@ fn target_effects(
 }
 
 fn apply(outcome: &Outcome) -> Result<()> {
+    let mut writes = Vec::new();
+    let mut deletes = Vec::new();
+
     for edit in &outcome.edits {
         if !edit.changed {
             continue;
         }
         match &edit.action {
-            EditAction::Delete => textio::delete_file(&edit.path)
-                .map_err(|e| err(ErrorCode::IoError, e.to_string()))?,
-            EditAction::Write(bytes) => textio::write_file(&edit.path, bytes)
-                .map_err(|e| err(ErrorCode::IoError, e.to_string()))?,
+            EditAction::Write(bytes) => {
+                writes.push(prepare_write(&edit.path, bytes)?);
+            }
+            EditAction::Delete => deletes.push(edit.path.clone()),
         }
     }
+
+    let mut applied = Vec::new();
+    for write in writes {
+        let path = write.path().display().to_string();
+        if let Err(error) = write.persist() {
+            return Err(partial_apply_error(
+                &applied,
+                format!("failed to write {path}: {error}"),
+            ));
+        }
+        applied.push(path);
+    }
+
+    for path in deletes {
+        let display = path.display().to_string();
+        if let Err(error) = textio::delete_file(&path) {
+            return Err(partial_apply_error(
+                &applied,
+                format!("failed to delete {display}: {error}"),
+            ));
+        }
+        applied.push(display);
+    }
+
     Ok(())
+}
+
+fn read_text_file(path: &Path) -> Result<TextFile> {
+    textio::read_file(path).map_err(|error| match error {
+        TextIoError::Io(error) => err(ErrorCode::IoError, error.to_string()),
+        TextIoError::Encoding(message) => err(ErrorCode::EncodingError, message),
+    })
+}
+
+fn prepare_write(path: &Path, bytes: &[u8]) -> Result<PreparedWrite> {
+    textio::prepare_write(path, bytes).map_err(|error| {
+        err(
+            ErrorCode::IoError,
+            format!("failed before mutating target files: {error}"),
+        )
+    })
+}
+
+fn partial_apply_error(applied: &[String], failure: String) -> RearrangeError {
+    if applied.is_empty() {
+        err(ErrorCode::IoError, failure)
+    } else {
+        err(
+            ErrorCode::IoError,
+            format!(
+                "{failure}; partial apply: {} target(s) already changed: {}",
+                applied.len(),
+                applied.join(", ")
+            ),
+        )
+    }
 }
 
 fn resolve_range(range: &RangeExpr, line_count: usize, line: usize) -> Result<(usize, usize)> {

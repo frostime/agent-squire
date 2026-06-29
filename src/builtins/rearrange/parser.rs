@@ -184,7 +184,7 @@ fn parse_slug_path(rest: &str, line: usize, kind: &str) -> Result<(String, Strin
 }
 
 fn parse_optional_slug_path(rest: &str, line: usize) -> Result<(Option<String>, String)> {
-    if let Some((slug, path)) = rest.split_once(" = ") {
+    if let Some((slug, path)) = rest.split_once('=') {
         let slug = slug.trim();
         validate_ident(slug, line)?;
         let path = path.trim();
@@ -226,10 +226,16 @@ fn parse_file_state<T>(
         "<missing>" => Ok(FileState::Missing),
         "<empty>" => Ok(FileState::Empty),
         _ => {
-            let items = raw
-                .split(',')
-                .map(str::trim)
-                .filter(|item| !item.is_empty())
+            let parts = raw.split(',').map(str::trim).collect::<Vec<_>>();
+            if parts.iter().any(|item| item.is_empty()) {
+                return Err(err_at(
+                    ErrorCode::InvalidSpec,
+                    line,
+                    "sequence contains an empty item",
+                ));
+            }
+            let items = parts
+                .into_iter()
                 .map(|item| parse_item(item, line))
                 .collect::<Result<Vec<_>>>()?;
             if items.is_empty() {
