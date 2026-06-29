@@ -3,6 +3,7 @@ mod model;
 mod parser;
 mod sources;
 mod template;
+mod zip;
 
 use std::fs;
 use std::io::{self, Write};

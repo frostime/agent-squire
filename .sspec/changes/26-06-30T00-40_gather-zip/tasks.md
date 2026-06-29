@@ -1,6 +1,6 @@
 ---
 change: "gather-zip"
-updated: ""
+updated: "2026-06-30T00:45:00"
 ---
 
 # Tasks
@@ -10,41 +10,94 @@ updated: ""
 
 ## Tasks
 
-<!-- MUST organize by phases. Each task <2h, independently testable.
-Phase emoji: ⏳ pending | 🚧 in progress | ✅ done
-
-### Phase 1: <name> ⏳
-- [ ] Task description `path/file.py`
-- [ ] Task description `path/file.py`
+### Phase 1: Data model + scaffolding ✅
+- [x] Add `Zip { path, and_done }` variant to `InteractiveCommand` in `src/builtins/gather/interactive.rs`
+- [x] Update `parse_interactive_command()` to parse `/zip`, `/zip <path>`, `/zip /done`, `/zip <path> /done` in `src/builtins/gather/interactive.rs`
+- [x] Create `src/builtins/gather/zip.rs` with stub: `assemble_zip()`, `create_zip_archive()`, `collect_warnings_and_confirm()`
+- [x] Add `mod zip;` to `src/builtins/gather/mod.rs`
+- [x] Define `Manifest`, `ManifestEntry`, `RangeField` types with serde Serialize in `src/builtins/gather/zip.rs`
+- [x] Define `FileEntry` and `ArtifactEntry` / `ArtifactMeta` internal types in `src/builtins/gather/zip.rs`
 **Verification**:
-- Agent: <test/build/lint/CLI command and expected result>
-- Agent: <manual/sandbox check and expected result>
+- Agent: `cargo check --lib` compiles
+- Agent: `cargo test --lib` (existing tests pass)
+
+---
+
+### Phase 2: File collection + artifact generation ⏳
+- [ ] Implement `collect_file_entries()` — traverse Sources, expand Dir/Glob/SelectedGlob, resolve File paths, dedup by `files/<relative_path>` in `src/builtins/gather/zip.rs`
+- [ ] Implement `generate_artifacts()` — execute Cmd sources, call `render_tree()` for Tree sources, slice ranged File sources, produce `ArtifactEntry` list in `src/builtins/gather/zip.rs`
+- [ ] Implement `build_manifest()` — convert `Vec<FileEntry>` + `Vec<ArtifactEntry>` + sources into `Manifest` struct in `src/builtins/gather/zip.rs`
+- [ ] Implement `assemble_staging_dir()` — create tempdir, copy files to `files/`, write artifacts to `artifacts/`, write `manifest.json` in `src/builtins/gather/zip.rs`
+- [ ] Implement `sanitize_filename()` helper — replace `/ \ : * ? " < > |` and spaces with `-` in `src/builtins/gather/zip.rs`
+**Verification**:
+- Agent: `cargo test --lib` (existing + new unit tests for sanitize, dedup)
+- Agent: manual `dbg!` on staging dir structure matches design.md structure
+
+---
+
+### Phase 3: External zip creation + output ⏳
+- [ ] Implement `create_zip_archive()` — `#[cfg(windows)]` → `powershell Compress-Archive`, `#[cfg(not(windows))]` → `zip -r` in `src/builtins/gather/zip.rs`
+- [ ] Implement cross-volume rename fallback: `fs::rename` → on error `fs::copy` + `fs::remove_file` in `src/builtins/gather/zip.rs`
+- [ ] Implement `assemble_zip()` top-level orchestrator wiring phases 2+3 in `src/builtins/gather/zip.rs`
+**Verification**:
+- Agent: `cargo test --lib`
+- Agent: manually run `/zip` in interactive mode → verify zip is created in cwd, unzippable, contains correct structure
+
+---
+
+### Phase 4: Safety checks + warning UX ⏳
+- [ ] Implement `is_binary()` — read first 8KB, detect null byte in `src/builtins/gather/zip.rs`
+- [ ] Implement `collect_warnings()` — iterate FileEntries, classify binary + >10MB, return warning list in `src/builtins/gather/zip.rs`
+- [ ] Implement `confirm_warnings()` — print merged warning list, read stdin Y/n in `src/builtins/gather/zip.rs`
+**Verification**:
+- Agent: `cargo test --lib` (unit tests for is_binary with text/binary fixtures)
+- Agent: manual `/zip` with a .png and >10MB file → warning display + Y/n prompt
+
+---
+
+### Phase 5: Interactive command wiring ⏳
+- [ ] Wire `InteractiveCommand::Zip` into `read_sources()` main loop in `src/builtins/gather/interactive.rs`
+- [ ] Handle edge cases: empty sources → error "No sources to package"
+- [ ] Handle edge cases: no file-backed sources → error "No file sources to package"
+- [ ] Handle `/zip /done` → package then set `render = true` and break
+- [ ] Handle external path sources (absolute / `../`) — flatten to `files/_external/<safe-name>`, print warning in `src/builtins/gather/zip.rs`
+**Verification**:
+- Agent: `cargo test --lib`
+- Agent: `cargo clippy --all-targets --all-features -- -D warnings`
+
+---
+
+### Phase 6: Integration tests ⏳
+- [ ] Add test: `/zip` with file+dir+cmd → zip exists, contains `files/` + `artifacts/` + `manifest.json` in `tests/gather.rs`
+- [ ] Add test: `/zip` with empty sources → error message in `tests/gather.rs`
+- [ ] Add test: `/zip` with binary file → warning appears on stderr in `tests/gather.rs`
+- [ ] Add test: `/zip /done` → zip created + process exits in `tests/gather.rs`
+- [ ] Add test: `/zip` with ranged file → artifact contains correct slice in `tests/gather.rs`
+- [ ] Add test: `/zip --no-gitignore` state propagates correctly in `tests/gather.rs`
+**Verification**:
+- Agent: `cargo test` (all integration tests pass)
+- Agent: `cargo clippy --all-targets --all-features -- -D warnings`
+
 **User Check**:
-1. BC-1: <user action> → <expected observable result>
-
-Verification is for agent-run checks. User Check is for black-box review steps that map to spec.md Behavior Contract labels.
-If the change is internal/refactor-only and spec.md states no user-visible behavior change, User Check MAY be omitted.
-
-### Feedback Tasks (→ [NNN-description](./revisions/NNN-description.md))
-Use this section for review/feedback tasks that still belong to the current change.
-
-If accepted feedback changes scope/design:
-- **Design phase**: update `spec.md` / `design.md` directly, then add tasks here.
-- **Plan/Implement/Review** (spec locked): create `revisions/NNN-*.md` FIRST, then update this section. Do NOT edit `spec.md` / `design.md`.
-
-The section header MUST link the corresponding revision file (relative path).
-If the work belongs in a new follow-up or replacement change, the agent MUST NOT put it here unless the user has first approved that direction via `@align`.
--->
+1. BC-1: `asq gather -i` → add `file:src/main.rs` → type `/zip` → verify zip created in cwd at `asq-gather-<timestamp>.zip`
+2. BC-2: Unzip output → verify `files/`, `artifacts/`, `manifest.json` exist with correct content
+3. BC-3: `asq gather -i` → add `.png` file → type `/zip` → verify warning appears, type `y` → zip created with .png inside
+4. BC-5: `asq gather -i` → type `/zip` immediately → verify "No sources to package" error
 
 ---
 
 ## Progress
 
-**Overall**: 0%
+**Overall**: 17%
 
 | Phase | Progress | Status |
 |-------|----------|--------|
-| Phase 1 | 0% | ⏳ |
+| Phase 1 | 100% | ✅ |
+| Phase 2 | 0% | ⏳ |
+| Phase 3 | 0% | ⏳ |
+| Phase 4 | 0% | ⏳ |
+| Phase 5 | 0% | ⏳ |
+| Phase 6 | 0% | ⏳ |
 
 **Recent**:
 - (none yet)

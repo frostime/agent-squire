@@ -15,13 +15,17 @@ pub struct InteractiveResult {
     pub render: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InteractiveCommand {
     Help,
     List,
     Done,
     Exit,
     ToggleAll,
+    Zip {
+        path: Option<String>,
+        and_done: bool,
+    },
 }
 
 pub fn read_sources(cwd: &Path, respect_gitignore: bool) -> Result<InteractiveResult> {
@@ -65,6 +69,9 @@ pub fn read_sources(cwd: &Path, respect_gitignore: bool) -> Result<InteractiveRe
                         "including gitignored files"
                     };
                     println!("  fzf selection now {mode}");
+                }
+                InteractiveCommand::Zip { .. } => {
+                    println!("  /zip: not yet implemented");
                 }
             }
             continue;
@@ -111,7 +118,37 @@ pub fn read_sources(cwd: &Path, respect_gitignore: bool) -> Result<InteractiveRe
 }
 
 pub fn parse_interactive_command(line: &str) -> Option<InteractiveCommand> {
-    match line.trim().to_ascii_lowercase().as_str() {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+
+    if let Some(rest) = lower.strip_prefix("/zip") {
+        let rest = rest.trim_start();
+        if rest.is_empty() {
+            return Some(InteractiveCommand::Zip {
+                path: None,
+                and_done: false,
+            });
+        }
+        let (path_part, and_done) = if rest == "/done" {
+            ("", true)
+        } else if rest == "--done" {
+            ("", true)
+        } else if let Some(p) = rest.strip_suffix(" /done") {
+            (p.trim(), true)
+        } else if let Some(p) = rest.strip_suffix(" --done") {
+            (p.trim(), true)
+        } else {
+            (rest, false)
+        };
+        let path = if path_part.is_empty() {
+            None
+        } else {
+            Some(path_part.to_string())
+        };
+        return Some(InteractiveCommand::Zip { path, and_done });
+    }
+
+    match lower.as_str() {
         "/help" | "help" | "?" => Some(InteractiveCommand::Help),
         "/list" | "list" => Some(InteractiveCommand::List),
         "/done" | "done" => Some(InteractiveCommand::Done),
@@ -333,6 +370,46 @@ mod tests {
         );
         assert_eq!(parse_interactive_command("file:"), None);
     }
+
+    #[test]
+    fn parses_zip_command() {
+        assert_eq!(
+            parse_interactive_command("/zip"),
+            Some(InteractiveCommand::Zip {
+                path: None,
+                and_done: false,
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("/zip /done"),
+            Some(InteractiveCommand::Zip {
+                path: None,
+                and_done: true,
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("/zip --done"),
+            Some(InteractiveCommand::Zip {
+                path: None,
+                and_done: true,
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("/zip my-package.zip"),
+            Some(InteractiveCommand::Zip {
+                path: Some("my-package.zip".into()),
+                and_done: false,
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("/zip my-package.zip /done"),
+            Some(InteractiveCommand::Zip {
+                path: Some("my-package.zip".into()),
+                and_done: true,
+            })
+        );
+    }
+
 
     #[test]
     fn default_source_line_uses_selected_path() {
