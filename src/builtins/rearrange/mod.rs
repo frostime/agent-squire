@@ -1,12 +1,13 @@
-//! `asq rearrange` — declarative line-range chunk move/copy/delete/reorder.
+//! `asq rearrange` — Arrange state-transition DSL for line-range material reuse.
 //!
-//! Pipeline: read DSL → [`parser`] → [`Spec`] → [`plan`] → preview/diff, and on
-//! `--yes` write back via [`textio`]. Default is dry-run: nothing is written
-//! without `--yes`.
+//! Pipeline: read DSL → parse AST → validate pre-state snapshot/provenance →
+//! preview, and on `--yes` write/delete/create target files.
 
-mod model;
+mod ast;
+mod error;
 mod output;
 mod parser;
+mod path;
 mod plan;
 mod textio;
 
@@ -22,7 +23,7 @@ const REARRANGE_PROMPT: &str = include_str!("prompt.md");
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Move, copy, delete, or reorder 1-based line-range chunks within one file.\n\nDefine chunks and one action in a small DSL; the spec argument supports literal text, @stdin, @file:path, and @env:NAME. Default mode is dry-run; pass --yes to write."
+    long_about = "Rewrite files with the Arrange state-transition DSL. The spec argument supports literal text, @stdin, @file:path, and @env:NAME. Default mode is dry-run; pass --yes to write."
 )]
 pub struct RearrangeArgs {
     #[arg(help = "Spec content or input source: literal, @stdin, @file:path, @env:NAME")]
@@ -42,7 +43,7 @@ pub struct RearrangeArgs {
     #[arg(long, help = "Validate and preview without writing (default)")]
     pub dry_run: bool,
 
-    #[arg(short = 'y', long, help = "Apply changes (write the file)")]
+    #[arg(short = 'y', long, help = "Apply changes")]
     pub yes: bool,
 
     #[arg(long, help = "Print the rearrange DSL and CLI guide")]

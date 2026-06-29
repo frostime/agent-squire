@@ -1,258 +1,397 @@
-//! DSL parser: plain text → [`Spec`].
+//! Parser for the `rearrange` state-transition DSL.
 //!
-//! Grammar (one action per spec):
-//! ```text
-//! file <path>
-//! chunk <name> = <N> | <A>-<B>
-//! move|copy <region> to <anchor>
-//! delete <region>
-//! rearrange <names> => <names> [gap=slot|drop|error]
-//! ```
-//! `<region>` is an inline range (`10-20`) or a declared chunk name.
-//! Blank lines and `#` comment lines are ignored.
+//! This parser deliberately keeps syntax work separate from file-system and
+//! provenance validation. It produces an AST with source line numbers and raw
+//! range literals; the planner owns path identity and semantic invariants.
 
-use std::path::PathBuf;
-
-use crate::builtins::rearrange::model::{
-    Action, Anchor, ChunkDef, ErrorCode, Gap, RearrangeError, Region, Result, Spec,
+use crate::builtins::rearrange::ast::{
+    AfterItem, ArrangeAst, BeforeItem, FileState, RangeEnd, RangeExpr, ShareAst, ShareItemAst,
+    SpecAst,
 };
+use crate::builtins::rearrange::error::{ErrorCode, RearrangeError, Result};
 
-pub fn parse(input: &str) -> Result<Spec> {
-    let mut file: Option<PathBuf> = None;
-    let mut chunks: Vec<ChunkDef> = Vec::new();
-    let mut action: Option<Action> = None;
+pub fn parse(input: &str) -> Result<SpecAst> {
+    let mut parser = Parser::new(input);
+    parser.parse()
+}
 
-    for raw in input.lines() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
+struct Parser<'a> {
+    lines: Vec<(usize, &'a str)>,
+    index: usize,
+}
 
-        if let Some(rest) = line.strip_prefix("file ") {
-            if file.is_some() {
-                return Err(err(
-                    ErrorCode::InvalidSpec,
-                    "multiple `file` directives; v1 targets one file",
-                ));
-            }
-            file = Some(PathBuf::from(rest.trim()));
-        } else if let Some(rest) = line.strip_prefix("chunk ") {
-            chunks.push(parse_chunk(rest)?);
-        } else if is_action_line(line) {
-            if action.is_some() {
-                return Err(err(
-                    ErrorCode::MultipleActions,
-                    "v1 allows exactly one action per spec",
-                ));
-            }
-            action = Some(parse_action(line)?);
-        } else {
-            return Err(err(
-                ErrorCode::InvalidSpec,
-                format!("unrecognized line: {line}"),
-            ));
-        }
+impl<'a> Parser<'a> {
+    fn new(input: &'a str) -> Self {
+        let lines = input
+            .lines()
+            .enumerate()
+            .map(|(i, line)| (i + 1, line))
+            .collect();
+        Self { lines, index: 0 }
     }
 
-    let file = file.ok_or_else(|| err(ErrorCode::InvalidSpec, "missing `file` directive"))?;
-    let action = action.ok_or_else(|| err(ErrorCode::InvalidSpec, "no action found"))?;
-    Ok(Spec {
-        file,
-        chunks,
-        action,
+    fn parse(&mut self) -> Result<SpecAst> {
+        let mut shares = Vec::new();
+        let mut arranges = Vec::new();
+
+        while let Some((line_no, line)) = self.next_non_blank() {
+            if let Some(rest) = line.strip_prefix("share ") {
+                shares.push(self.parse_share(line_no, rest)?);
+            } else if let Some(rest) = line.strip_prefix("arrange ") {
+                arranges.push(self.parse_arrange(line_no, rest)?);
+            } else {
+                return Err(err_at(
+                    ErrorCode::InvalidSpec,
+                    line_no,
+                    format!("expected `share` or `arrange`, got: {line}"),
+                ));
+            }
+        }
+
+        if shares.is_empty() && arranges.is_empty() {
+            return Err(err(
+                ErrorCode::InvalidSpec,
+                "no share or arrange blocks found",
+            ));
+        }
+        Ok(SpecAst { shares, arranges })
+    }
+
+    fn parse_share(&mut self, line: usize, rest: &str) -> Result<ShareAst> {
+        let (slug, path) = parse_slug_path(rest, line, "share")?;
+        let mut items = Vec::new();
+
+        loop {
+            let Some((line_no, raw)) = self.next_non_blank() else {
+                return Err(err_at(
+                    ErrorCode::InvalidSpec,
+                    line,
+                    "unterminated share block",
+                ));
+            };
+            if raw == "end share" {
+                break;
+            }
+            if raw.starts_with("share ") || raw.starts_with("arrange ") {
+                return Err(err_at(
+                    ErrorCode::InvalidSpec,
+                    line_no,
+                    "nested blocks are not allowed",
+                ));
+            }
+            let (name, range) = parse_name_range(raw, line_no)?;
+            items.push(ShareItemAst {
+                name,
+                range,
+                line: line_no,
+            });
+        }
+
+        if items.is_empty() {
+            return Err(err_at(
+                ErrorCode::InvalidSpec,
+                line,
+                "share must declare at least one item",
+            ));
+        }
+        Ok(ShareAst {
+            slug,
+            path,
+            items,
+            line,
+        })
+    }
+
+    fn parse_arrange(&mut self, line: usize, rest: &str) -> Result<ArrangeAst> {
+        let (slug, path) = parse_optional_slug_path(rest, line)?;
+        let (before_line, before_raw) = self
+            .next_non_blank()
+            .ok_or_else(|| err_at(ErrorCode::InvalidSpec, line, "unterminated arrange block"))?;
+        let Some(before_rest) = before_raw.strip_prefix("before ") else {
+            return Err(err_at(
+                ErrorCode::InvalidSpec,
+                before_line,
+                "arrange block must declare `before` before `after`",
+            ));
+        };
+        let before = parse_before_state(before_rest.trim(), before_line)?;
+
+        let (after_line, after_raw) = self
+            .next_non_blank()
+            .ok_or_else(|| err_at(ErrorCode::InvalidSpec, line, "unterminated arrange block"))?;
+        let Some(after_rest) = after_raw.strip_prefix("after ") else {
+            return Err(err_at(
+                ErrorCode::InvalidSpec,
+                after_line,
+                "arrange block must declare `after` after `before`",
+            ));
+        };
+        let after = parse_after_state(after_rest.trim(), after_line)?;
+
+        let (end_line, end_raw) = self
+            .next_non_blank()
+            .ok_or_else(|| err_at(ErrorCode::InvalidSpec, line, "unterminated arrange block"))?;
+        if end_raw != "end arrange" {
+            return Err(err_at(
+                ErrorCode::InvalidSpec,
+                end_line,
+                format!("expected `end arrange`, got: {end_raw}"),
+            ));
+        }
+
+        Ok(ArrangeAst {
+            slug,
+            path,
+            before,
+            after,
+            line,
+        })
+    }
+
+    fn next_non_blank(&mut self) -> Option<(usize, &'a str)> {
+        while self.index < self.lines.len() {
+            let (line_no, raw) = self.lines[self.index];
+            self.index += 1;
+            let trimmed = raw.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            return Some((line_no, trimmed));
+        }
+        None
+    }
+}
+
+fn parse_slug_path(rest: &str, line: usize, kind: &str) -> Result<(String, String)> {
+    let (slug, path) = rest.split_once('=').ok_or_else(|| {
+        err_at(
+            ErrorCode::InvalidSpec,
+            line,
+            format!("{kind} block opener must be `{kind} <slug> = <file>`"),
+        )
+    })?;
+    let slug = slug.trim();
+    validate_ident(slug, line)?;
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(err_at(
+            ErrorCode::InvalidSpec,
+            line,
+            "path must not be empty",
+        ));
+    }
+    Ok((slug.to_string(), path.to_string()))
+}
+
+fn parse_optional_slug_path(rest: &str, line: usize) -> Result<(Option<String>, String)> {
+    if let Some((slug, path)) = rest.split_once(" = ") {
+        let slug = slug.trim();
+        validate_ident(slug, line)?;
+        let path = path.trim();
+        if path.is_empty() {
+            return Err(err_at(
+                ErrorCode::InvalidSpec,
+                line,
+                "path must not be empty",
+            ));
+        }
+        Ok((Some(slug.to_string()), path.to_string()))
+    } else {
+        let path = rest.trim();
+        if path.is_empty() {
+            return Err(err_at(
+                ErrorCode::InvalidSpec,
+                line,
+                "path must not be empty",
+            ));
+        }
+        Ok((None, path.to_string()))
+    }
+}
+
+fn parse_before_state(raw: &str, line: usize) -> Result<FileState<BeforeItem>> {
+    parse_file_state(raw, line, parse_before_item)
+}
+
+fn parse_after_state(raw: &str, line: usize) -> Result<FileState<AfterItem>> {
+    parse_file_state(raw, line, parse_after_item)
+}
+
+fn parse_file_state<T>(
+    raw: &str,
+    line: usize,
+    parse_item: fn(&str, usize) -> Result<T>,
+) -> Result<FileState<T>> {
+    match raw {
+        "<missing>" => Ok(FileState::Missing),
+        "<empty>" => Ok(FileState::Empty),
+        _ => {
+            let items = raw
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(|item| parse_item(item, line))
+                .collect::<Result<Vec<_>>>()?;
+            if items.is_empty() {
+                return Err(err_at(
+                    ErrorCode::InvalidSpec,
+                    line,
+                    "sequence must not be empty",
+                ));
+            }
+            Ok(FileState::Sequence(items))
+        }
+    }
+}
+
+fn parse_before_item(raw: &str, line: usize) -> Result<BeforeItem> {
+    if let Some(name) = parse_gap(raw) {
+        validate_ident(name, line)?;
+        return Ok(BeforeItem::Gap {
+            name: name.to_string(),
+            line,
+        });
+    }
+    if let Some((name, range)) = raw.split_once('=') {
+        let name = name.trim();
+        validate_ident(name, line)?;
+        return Ok(BeforeItem::Named {
+            name: name.to_string(),
+            range: parse_range(range.trim(), line)?,
+            line,
+        });
+    }
+    Ok(BeforeItem::Anonymous {
+        range: parse_range(raw, line)?,
+        line,
     })
 }
 
-fn is_action_line(line: &str) -> bool {
-    ["move ", "copy ", "delete ", "rearrange "]
-        .iter()
-        .any(|kw| line.starts_with(kw))
+fn parse_after_item(raw: &str, line: usize) -> Result<AfterItem> {
+    if let Some(name) = parse_gap(raw) {
+        validate_ident(name, line)?;
+        return Ok(AfterItem::Gap {
+            name: name.to_string(),
+            line,
+        });
+    }
+    if let Some((slug, name)) = raw.split_once("::") {
+        validate_ident(slug.trim(), line)?;
+        validate_ident(name.trim(), line)?;
+        return Ok(AfterItem::External {
+            slug: slug.trim().to_string(),
+            name: name.trim().to_string(),
+            line,
+        });
+    }
+    if raw.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        return Ok(AfterItem::Anonymous {
+            range: parse_range(raw, line)?,
+            line,
+        });
+    }
+    validate_ident(raw, line)?;
+    Ok(AfterItem::Local {
+        name: raw.to_string(),
+        line,
+    })
 }
 
-fn parse_chunk(rest: &str) -> Result<ChunkDef> {
-    let (name, range) = rest
-        .split_once('=')
-        .ok_or_else(|| err(ErrorCode::InvalidSpec, format!("chunk needs `=`: {rest}")))?;
-    let (start, end) = parse_range(range.trim())?;
+fn parse_gap(raw: &str) -> Option<&str> {
+    raw.strip_prefix("<gap:")?.strip_suffix('>')
+}
+
+fn parse_name_range(raw: &str, line: usize) -> Result<(String, RangeExpr)> {
+    let (name, range) = raw.split_once('=').ok_or_else(|| {
+        err_at(
+            ErrorCode::InvalidSpec,
+            line,
+            format!("expected `<name> = <range>`, got: {raw}"),
+        )
+    })?;
     let name = name.trim();
-    validate_name(name)?;
-    Ok(ChunkDef {
-        name: name.to_string(),
-        start,
-        end,
-    })
+    validate_ident(name, line)?;
+    Ok((name.to_string(), parse_range(range.trim(), line)?))
 }
 
-/// Reserved words that may not be used as chunk names; they would collide with
-/// the keyword-driven parse of directives, actions, anchors, and gap policy.
+fn parse_range(raw: &str, line: usize) -> Result<RangeExpr> {
+    if raw.is_empty() {
+        return Err(err_at(ErrorCode::InvalidRange, line, "empty range"));
+    }
+    if let Some((start, end)) = raw.split_once('-') {
+        let start = parse_line_number(start.trim(), line)?;
+        let end = if end.trim() == "end" {
+            RangeEnd::End
+        } else {
+            let end = parse_line_number(end.trim(), line)?;
+            if end < start {
+                return Err(err_at(
+                    ErrorCode::InvalidRange,
+                    line,
+                    format!("range start after end: {raw}"),
+                ));
+            }
+            RangeEnd::Line(end)
+        };
+        Ok(RangeExpr {
+            raw: raw.to_string(),
+            start,
+            end,
+        })
+    } else {
+        let n = parse_line_number(raw, line)?;
+        Ok(RangeExpr {
+            raw: raw.to_string(),
+            start: n,
+            end: RangeEnd::Line(n),
+        })
+    }
+}
+
+fn parse_line_number(raw: &str, line: usize) -> Result<usize> {
+    let n = raw.parse::<usize>().map_err(|_| {
+        err_at(
+            ErrorCode::InvalidRange,
+            line,
+            format!("not a line number: {raw}"),
+        )
+    })?;
+    if n == 0 {
+        return Err(err_at(
+            ErrorCode::InvalidRange,
+            line,
+            "line numbers are 1-based",
+        ));
+    }
+    Ok(n)
+}
+
 const KEYWORDS: &[&str] = &[
-    "file",
-    "chunk",
-    "move",
-    "copy",
-    "delete",
-    "rearrange",
-    "to",
-    "start",
-    "end",
-    "before",
-    "after",
-    "gap",
+    "share", "arrange", "before", "after", "end", "missing", "empty", "gap",
 ];
 
-/// SPEC: chunk names are identifiers `[A-Za-z_][A-Za-z0-9_]*` and not keywords.
-/// The leading-letter rule keeps names disjoint from inline ranges (which start
-/// with a digit), so a name is never silently mis-parsed as a range.
-fn validate_name(name: &str) -> Result<()> {
+fn validate_ident(name: &str, line: usize) -> Result<()> {
     let mut chars = name.chars();
     let valid_head = chars
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
     let valid_tail = chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
-    if !valid_head || !valid_tail {
-        return Err(err(
-            ErrorCode::InvalidSpec,
-            format!("invalid chunk name `{name}`: must match [A-Za-z_][A-Za-z0-9_]*"),
-        ));
-    }
-    if KEYWORDS.contains(&name) {
-        return Err(err(
-            ErrorCode::InvalidSpec,
-            format!("`{name}` is a reserved keyword"),
+    if !valid_head || !valid_tail || KEYWORDS.contains(&name) {
+        return Err(err_at(
+            ErrorCode::InvalidName,
+            line,
+            format!("invalid identifier `{name}`"),
         ));
     }
     Ok(())
 }
 
-fn parse_action(line: &str) -> Result<Action> {
-    if let Some(rest) = line.strip_prefix("rearrange ") {
-        return parse_rearrange(rest);
-    }
-    if let Some(rest) = line.strip_prefix("delete ") {
-        return Ok(Action::Delete {
-            src: parse_region(rest.trim())?,
-        });
-    }
-    // move / copy share `<region> to <anchor>`.
-    let (kw, rest) = line.split_once(' ').expect("checked prefix");
-    let (region, anchor) = rest.split_once(" to ").ok_or_else(|| {
-        err(
-            ErrorCode::InvalidSpec,
-            format!("`{kw}` needs `to <anchor>`: {line}"),
-        )
-    })?;
-    let src = parse_region(region.trim())?;
-    let to = parse_anchor(anchor.trim())?;
-    Ok(match kw {
-        "move" => Action::Move { src, to },
-        "copy" => Action::Copy { src, to },
-        _ => unreachable!("is_action_line gates the keyword"),
-    })
-}
-
-fn parse_rearrange(rest: &str) -> Result<Action> {
-    let (lists, gap) = match rest.split_once("gap=") {
-        Some((head, g)) => (head.trim(), parse_gap(g.trim())?),
-        None => (rest.trim(), Gap::Slot),
-    };
-    let (from_raw, to_raw) = lists.split_once("=>").ok_or_else(|| {
-        err(
-            ErrorCode::InvalidSpec,
-            format!("rearrange needs `=>`: {rest}"),
-        )
-    })?;
-    let from = parse_name_list(from_raw);
-    let to = parse_name_list(to_raw);
-    if from.is_empty() || to.is_empty() {
-        return Err(err(
-            ErrorCode::InvalidSpec,
-            "rearrange needs chunk names on both sides",
-        ));
-    }
-    Ok(Action::Rearrange { from, to, gap })
-}
-
-fn parse_name_list(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
-fn parse_gap(raw: &str) -> Result<Gap> {
-    match raw {
-        "slot" => Ok(Gap::Slot),
-        "drop" => Ok(Gap::Drop),
-        "error" => Ok(Gap::Error),
-        other => Err(err(
-            ErrorCode::InvalidSpec,
-            format!("unknown gap policy: {other}"),
-        )),
-    }
-}
-
-/// An inline `A-B`/`N` parses to a range; anything else is a chunk name.
-fn parse_region(raw: &str) -> Result<Region> {
-    if raw.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        let (start, end) = parse_range(raw)?;
-        Ok(Region::Inline { start, end })
-    } else {
-        Ok(Region::Named(raw.to_string()))
-    }
-}
-
-fn parse_anchor(raw: &str) -> Result<Anchor> {
-    match raw {
-        "start" => Ok(Anchor::Start),
-        "end" => Ok(Anchor::End),
-        _ => {
-            if let Some(n) = raw.strip_prefix("before ") {
-                Ok(Anchor::Before(parse_line(n.trim())?))
-            } else if let Some(n) = raw.strip_prefix("after ") {
-                Ok(Anchor::After(parse_line(n.trim())?))
-            } else {
-                Err(err(
-                    ErrorCode::InvalidSpec,
-                    format!("invalid anchor: {raw}"),
-                ))
-            }
-        }
-    }
-}
-
-fn parse_range(raw: &str) -> Result<(usize, usize)> {
-    match raw.split_once('-') {
-        Some((a, b)) => {
-            let start = parse_line(a.trim())?;
-            let end = parse_line(b.trim())?;
-            if start > end {
-                return Err(err(
-                    ErrorCode::InvalidRange,
-                    format!("range start after end: {raw}"),
-                ));
-            }
-            Ok((start, end))
-        }
-        None => {
-            let n = parse_line(raw)?;
-            Ok((n, n))
-        }
-    }
-}
-
-fn parse_line(raw: &str) -> Result<usize> {
-    let n: usize = raw
-        .parse()
-        .map_err(|_| err(ErrorCode::InvalidRange, format!("not a line number: {raw}")))?;
-    if n == 0 {
-        return Err(err(ErrorCode::InvalidRange, "line numbers are 1-based"));
-    }
-    Ok(n)
-}
-
 fn err(code: ErrorCode, message: impl Into<String>) -> RearrangeError {
     RearrangeError::new(code, message)
+}
+
+fn err_at(code: ErrorCode, line: usize, message: impl Into<String>) -> RearrangeError {
+    RearrangeError::at_line(code, line, message)
 }
 
 #[cfg(test)]
@@ -260,41 +399,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_move_inline() {
-        let spec = parse("file a.md\nmove 40-90 to after 120").unwrap();
-        assert!(matches!(spec.action, Action::Move { .. }));
+    fn parses_share_and_arrange() {
+        let spec = parse(
+            "share tpl = snippets/header.rs\n  header = 1-end\nend share\n\narrange main = src/foo.rs\n  before head = 1-10, tail = 11-end\n  after  tpl::header, tail, head\nend arrange",
+        )
+        .unwrap();
+        assert_eq!(spec.shares.len(), 1);
+        assert_eq!(spec.arranges.len(), 1);
+        assert_eq!(spec.arranges[0].slug.as_deref(), Some("main"));
     }
 
     #[test]
-    fn parses_rearrange_with_gap() {
-        let spec =
-            parse("file a.md\nchunk A = 1-10\nchunk B = 15-20\nrearrange A, B => B, A gap=drop")
-                .unwrap();
-        match spec.action {
-            Action::Rearrange { from, to, gap } => {
-                assert_eq!(from, ["A", "B"]);
-                assert_eq!(to, ["B", "A"]);
-                assert!(matches!(gap, Gap::Drop));
-            }
-            _ => panic!("expected rearrange"),
-        }
-    }
-
-    #[test]
-    fn rejects_multiple_actions() {
-        let e = parse("file a.md\ndelete 1-2\ndelete 3-4").unwrap_err();
-        assert_eq!(e.code, ErrorCode::MultipleActions);
-    }
-
-    #[test]
-    fn rejects_missing_file() {
-        let e = parse("delete 1-2").unwrap_err();
+    fn rejects_after_before_before() {
+        let e =
+            parse("arrange a.md\n  after <empty>\n  before <missing>\nend arrange").unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidSpec);
     }
 
     #[test]
-    fn rejects_inverted_range() {
-        let e = parse("file a.md\ndelete 20-10").unwrap_err();
-        assert_eq!(e.code, ErrorCode::InvalidRange);
+    fn rejects_bad_identifier() {
+        let e = parse("share 1tpl = a.md\n  header = 1-end\nend share").unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidName);
+    }
+
+    #[test]
+    fn parses_numeric_eof_guard() {
+        let spec = parse("arrange a.md\n  before body = 1-3\n  after body\nend arrange").unwrap();
+        let FileState::Sequence(items) = &spec.arranges[0].before else {
+            panic!("expected sequence");
+        };
+        let BeforeItem::Named { range, .. } = &items[0] else {
+            panic!("expected named range");
+        };
+        assert_eq!(range.raw, "1-3");
     }
 }

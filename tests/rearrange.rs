@@ -9,13 +9,12 @@ fn squire() -> Command {
     Command::cargo_bin("squire").unwrap()
 }
 
-/// RFC case 1: single-file move, dry-run leaves file untouched, --yes applies.
 #[test]
-fn move_dry_run_does_not_write_then_yes_applies() {
+fn dry_run_does_not_write_then_yes_applies_state_transition() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("a.md");
-    fs::write(&file, "1\n2\n3\n4\n5\n").unwrap();
-    let spec = "file a.md\nmove 1-2 to after 4";
+    fs::write(&file, "A\nB\nC\n").unwrap();
+    let spec = "arrange a.md\n  before A = 1-1, B = 2-2, C = 3-end\n  after C, A, B\nend arrange";
 
     squire()
         .current_dir(dir.path())
@@ -24,8 +23,10 @@ fn move_dry_run_does_not_write_then_yes_applies() {
         .assert()
         .success()
         .stdout(predicate::str::contains("dry-run"))
+        .stdout(predicate::str::contains("before: A=1-1, B=2-2, C=3-end"))
+        .stdout(predicate::str::contains("after : C, A, B"))
         .stdout(predicate::str::contains("No file written"));
-    assert_eq!(fs::read_to_string(&file).unwrap(), "1\n2\n3\n4\n5\n");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "A\nB\nC\n");
 
     squire()
         .current_dir(dir.path())
@@ -33,135 +34,184 @@ fn move_dry_run_does_not_write_then_yes_applies() {
         .write_stdin(spec)
         .assert()
         .success()
-        .stdout(predicate::str::contains("modified"));
-    assert_eq!(fs::read_to_string(&file).unwrap(), "3\n4\n1\n2\n5\n");
-}
-
-/// RFC case 2: contiguous chunks reorder.
-#[test]
-fn rearrange_contiguous_chunks() {
-    let dir = tempdir().unwrap();
-    let file = dir.path().join("a.md");
-    fs::write(&file, "A\nB\nC\n").unwrap();
-
-    squire()
-        .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin(
-            "file a.md\nchunk A = 1-1\nchunk B = 2-2\nchunk C = 3-3\nrearrange A, B, C => C, A, B",
-        )
-        .assert()
-        .success();
+        .stdout(predicate::str::contains("written"));
     assert_eq!(fs::read_to_string(&file).unwrap(), "C\nA\nB\n");
 }
 
-/// RFC case 3: gap=slot keeps hidden lines pinned between slots.
 #[test]
-fn rearrange_gap_slot_keeps_hidden() {
+fn explicit_gap_can_be_preserved_and_moved() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("a.md");
-    fs::write(&file, "A\nh1\nB\nC\nh2\nD\n").unwrap();
+    fs::write(&file, "A\nhidden\nB\n").unwrap();
 
     squire()
         .current_dir(dir.path())
         .args(["rearrange", "--stdin", "--yes"])
         .write_stdin(
-            "file a.md\nchunk A = 1-1\nchunk B = 3-3\nchunk C = 4-4\nchunk D = 6-6\nrearrange A, B, C, D => B, D, C, A",
+            "arrange a.md\n  before A = 1-1, <gap:hidden>, B = 3-end\n  after B, <gap:hidden>, A\nend arrange",
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("gap hidden = 2-2"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "B\nhidden\nA\n");
+}
+
+#[test]
+fn hidden_gap_fails_without_writing() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("a.md");
+    fs::write(&file, "A\nhidden\nB\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--yes"])
+        .write_stdin("arrange a.md\n  before A = 1-1, B = 3-end\n  after B, A\nend arrange")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("UNDECLARED_GAP"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "A\nhidden\nB\n");
+}
+
+#[test]
+fn cross_file_extract_creates_parent_directory() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("foo.rs");
+    fs::write(&file, "api\nparser\nrest\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--yes"])
+        .write_stdin(
+            "arrange main = foo.rs\n  before api = 1-1, parser = 2-2, rest = 3-end\n  after api, rest\nend arrange\n\narrange src/parser.rs\n  before <missing>\n  after main::parser\nend arrange",
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("target main = foo.rs"))
+        .stdout(predicate::str::contains("target src/parser.rs"));
+
+    assert_eq!(fs::read_to_string(&file).unwrap(), "api\nrest\n");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("src/parser.rs")).unwrap(),
+        "parser\n"
+    );
+}
+
+#[test]
+fn share_material_can_be_inserted() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("snippets")).unwrap();
+    fs::write(dir.path().join("snippets/header.rs"), "// header\n").unwrap();
+    fs::write(dir.path().join("foo.rs"), "body\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--yes"])
+        .write_stdin(
+            "share tpl = snippets/header.rs\n  header = 1-end\nend share\n\narrange foo.rs\n  before body = 1-end\n  after tpl::header, body\nend arrange",
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("share tpl = snippets/header.rs"));
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("foo.rs")).unwrap(),
+        "// header\nbody\n"
+    );
+}
+
+#[test]
+fn empty_and_missing_states_create_and_clear_files() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("full.md"), "content\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--yes"])
+        .write_stdin(
+            "arrange empty/new.txt\n  before <missing>\n  after <empty>\nend arrange\n\narrange full.md\n  before all = 1-end\n  after <empty>\nend arrange",
         )
         .assert()
         .success();
-    assert_eq!(fs::read_to_string(&file).unwrap(), "B\nh1\nD\nC\nh2\nA\n");
+
+    assert_eq!(
+        fs::metadata(dir.path().join("empty/new.txt"))
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(fs::read_to_string(dir.path().join("full.md")).unwrap(), "");
 }
 
-/// RFC case 4: gap=drop discards hidden lines and reports them.
 #[test]
-fn rearrange_gap_drop_discards_hidden() {
+fn duplicate_normalized_arrange_path_fails() {
     let dir = tempdir().unwrap();
-    let file = dir.path().join("a.md");
-    fs::write(&file, "A\nh1\nh2\nB\n").unwrap();
+    fs::write(dir.path().join("a.md"), "A\n").unwrap();
 
     squire()
         .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin("file a.md\nchunk A = 1-1\nchunk B = 4-4\nrearrange A, B => B, A gap=drop")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("dropped 2-3"));
-    assert_eq!(fs::read_to_string(&file).unwrap(), "B\nA\n");
-}
-
-/// RFC case 5: overlapping chunks fail with a structured code, no write.
-#[test]
-fn overlapping_chunks_fail_without_writing() {
-    let dir = tempdir().unwrap();
-    let file = dir.path().join("a.md");
-    fs::write(&file, "1\n2\n3\n4\n").unwrap();
-
-    squire()
-        .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin("file a.md\nchunk A = 1-2\nchunk B = 2-3\nrearrange A, B => B, A")
+        .args(["rearrange", "--stdin"])
+        .write_stdin(
+            "arrange a.md\n  before A = 1-end\n  after A\nend arrange\n\narrange ./a.md\n  before A = 1-end\n  after A\nend arrange",
+        )
         .assert()
         .failure()
-        .stderr(predicate::str::contains("OVERLAPPING_CHUNKS"));
-    assert_eq!(fs::read_to_string(&file).unwrap(), "1\n2\n3\n4\n");
+        .stderr(predicate::str::contains("DUPLICATE_PATH"));
 }
 
-/// BC-3: CRLF newline style is preserved on write.
 #[test]
-fn crlf_newline_preserved() {
+fn named_before_range_cannot_be_referenced_as_bare_after_range() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "A\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin"])
+        .write_stdin("arrange a.md\n  before A = 1-end\n  after 1-end\nend arrange")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("UNKNOWN_REFERENCE"));
+}
+
+#[test]
+fn crlf_newline_preserved_for_existing_target() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("a.md");
-    fs::write(&file, "1\r\n2\r\n3\r\n").unwrap();
+    fs::write(&file, "A\r\nB\r\n").unwrap();
 
     squire()
         .current_dir(dir.path())
         .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin("file a.md\nmove 1-1 to after 3")
+        .write_stdin("arrange a.md\n  before A = 1-1, B = 2-end\n  after B, A\nend arrange")
         .assert()
         .success();
-    assert_eq!(fs::read_to_string(&file).unwrap(), "2\r\n3\r\n1\r\n");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "B\r\nA\r\n");
 }
 
-/// BC-1/BC-4: more than one action is rejected.
 #[test]
-fn multiple_actions_rejected() {
+fn dry_run_overrides_yes() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.md"), "1\n2\n3\n4\n").unwrap();
+    let file = dir.path().join("a.md");
+    fs::write(&file, "A\nB\n").unwrap();
 
     squire()
         .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin("file a.md\ndelete 1-1\ndelete 2-2")
+        .args(["rearrange", "--stdin", "--dry-run", "--yes"])
+        .write_stdin("arrange a.md\n  before A = 1-1, B = 2-end\n  after B, A\nend arrange")
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("MULTIPLE_ACTIONS"));
+        .success()
+        .stdout(predicate::str::contains("dry-run"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "A\nB\n");
 }
 
-/// BC-4: missing target file reports FILE_NOT_FOUND.
 #[test]
-fn missing_file_reports_not_found() {
+fn json_output_envelope_contains_targets() {
     let dir = tempdir().unwrap();
-
-    squire()
-        .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin("file nope.md\ndelete 1-1")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("FILE_NOT_FOUND"));
-}
-
-/// BC-5: JSON output uses the standard envelope with a diff field.
-#[test]
-fn json_output_envelope() {
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.md"), "1\n2\n3\n").unwrap();
+    fs::write(dir.path().join("a.md"), "A\nB\n").unwrap();
 
     let out = squire()
         .current_dir(dir.path())
         .args(["--json", "rearrange", "--stdin"])
-        .write_stdin("file a.md\nmove 1-1 to end")
+        .write_stdin("arrange a.md\n  before A = 1-1, B = 2-end\n  after B, A\nend arrange")
         .assert()
         .success()
         .get_output()
@@ -171,122 +221,17 @@ fn json_output_envelope() {
     assert_eq!(json["ok"], true);
     assert_eq!(json["command"], "rearrange");
     assert_eq!(json["data"]["written"], false);
-    assert!(
-        json["data"]["diff"]
-            .as_str()
-            .unwrap()
-            .contains("--- a/a.md")
-    );
+    assert_eq!(json["data"]["targets"][0]["path"], "a.md");
+    assert_eq!(json["data"]["targets"][0]["after"], "B, A");
 }
 
 #[test]
-fn prompt_prints_guide() {
+fn prompt_prints_dst_guide_without_old_actions() {
     squire()
         .args(["rearrange", "--prompt"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Squire rearrange format"));
-}
-
-/// rev-001: gap=error uses the dedicated NON_EMPTY_GAP code, not INVALID_SPEC.
-#[test]
-fn gap_error_reports_non_empty_gap() {
-    let dir = tempdir().unwrap();
-    let file = dir.path().join("a.md");
-    fs::write(&file, "A\nh\nB\n").unwrap();
-
-    squire()
-        .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin("file a.md\nchunk A = 1-1\nchunk B = 3-3\nrearrange A, B => B, A gap=error")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("NON_EMPTY_GAP"));
-    assert_eq!(fs::read_to_string(&file).unwrap(), "A\nh\nB\n");
-}
-
-/// rev-001: duplicate chunk names in a rearrange list are rejected.
-#[test]
-fn duplicate_rearrange_names_rejected() {
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.md"), "A\nB\n").unwrap();
-
-    squire()
-        .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin("file a.md\nchunk A = 1-1\nchunk B = 2-2\nrearrange A, A => A, A")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("REARRANGE_SET_MISMATCH"));
-}
-
-/// rev-001: --dry-run overrides --yes; nothing is written.
-#[test]
-fn dry_run_overrides_yes() {
-    let dir = tempdir().unwrap();
-    let file = dir.path().join("a.md");
-    fs::write(&file, "1\n2\n3\n").unwrap();
-
-    squire()
-        .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--dry-run", "--yes"])
-        .write_stdin("file a.md\nmove 1-1 to end")
-        .assert()
-        .success();
-    assert_eq!(fs::read_to_string(&file).unwrap(), "1\n2\n3\n");
-}
-
-/// rev-001: --yes on a no-op reports `(no-op)`, not `(dry-run)`.
-#[test]
-fn yes_noop_labeled_no_op() {
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.md"), "1\n2\n3\n").unwrap();
-
-    squire()
-        .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin("file a.md\nmove 1-3 to after 3")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("(no-op)"));
-}
-
-/// rev-001: a chunk name with a leading digit is rejected at declaration.
-#[test]
-fn leading_digit_chunk_name_rejected() {
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.md"), "1\n2\n").unwrap();
-
-    squire()
-        .current_dir(dir.path())
-        .args(["rearrange", "--stdin", "--yes"])
-        .write_stdin("file a.md\nchunk 1A = 1-1\ndelete 1A")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("INVALID_SPEC"));
-}
-
-/// rev-001: JSON data carries structured action (and chunks for rearrange).
-#[test]
-fn json_data_carries_action_and_chunks() {
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.md"), "A\nB\nC\n").unwrap();
-
-    let out = squire()
-        .current_dir(dir.path())
-        .args(["--json", "rearrange", "--stdin"])
-        .write_stdin(
-            "file a.md\nchunk A = 1-1\nchunk B = 2-2\nchunk C = 3-3\nrearrange A, B, C => C, B, A",
-        )
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let json: Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(json["data"]["action"]["type"], "rearrange");
-    assert_eq!(json["data"]["action"]["to"][0], "C");
-    assert_eq!(json["data"]["action"]["gap"], "slot");
-    assert_eq!(json["data"]["chunks"]["A"]["range"], "1-1");
-    assert_eq!(json["data"]["chunks"]["A"]["lines"], 1);
+        .stdout(predicate::str::contains("Arrange state-transition DSL"))
+        .stdout(predicate::str::contains("share <slug> = <file>"))
+        .stdout(predicate::str::contains("move/copy/delete").not());
 }

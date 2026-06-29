@@ -1,11 +1,9 @@
-//! Text I/O for `rearrange`, the single home of newline and encoding knowledge.
+//! Text I/O for `rearrange`.
 //!
-//! The planner never sees line terminators: [`read_file`] hands it logical
-//! lines (terminator stripped) and [`TextFile`] remembers how to reassemble
-//! them. [`write_file`] restores the original newline style, trailing-newline
-//! presence, and byte encoding. Keeping this knowledge in one module is what
-//! lets the planner reason purely about `Vec<String>`.
+//! Planner logic works with logical lines. This module owns decoding, newline
+//! metadata, final-newline metadata, encoding-safe rendering, and atomic writes.
 
+use std::borrow::Cow;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -36,8 +34,7 @@ impl Newline {
     }
 }
 
-/// A file decoded into logical lines plus the metadata needed to write it back
-/// byte-for-byte compatible (encoding, newline style, trailing newline).
+#[derive(Debug, Clone)]
 pub struct TextFile {
     pub lines: Vec<String>,
     pub encoding: Encoding,
@@ -60,8 +57,11 @@ pub fn read_file(path: &Path) -> Result<TextFile> {
 }
 
 impl TextFile {
-    /// Reassemble logical lines into bytes using the original file's style.
-    pub fn render(&self, lines: &[String]) -> Vec<u8> {
+    pub fn is_empty_file(&self) -> bool {
+        self.lines.is_empty() && !self.trailing_newline
+    }
+
+    pub fn render_existing(&self, lines: &[String]) -> std::result::Result<Vec<u8>, String> {
         let mut text = lines.join(self.newline.as_str());
         if self.trailing_newline && !lines.is_empty() {
             text.push_str(self.newline.as_str());
@@ -70,9 +70,18 @@ impl TextFile {
     }
 }
 
-/// Atomically replace `path` with `bytes` via a same-directory temp file.
+pub fn render_created(lines: &[String]) -> Vec<u8> {
+    let mut text = lines.join("\n");
+    if !lines.is_empty() {
+        text.push('\n');
+    }
+    text.into_bytes()
+}
+
 pub fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+
     let mut tmp = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("failed to create temp file in {}", parent.display()))?;
     tmp.write_all(bytes)?;
@@ -82,6 +91,14 @@ pub fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
     tmp.persist(path)
         .map_err(|err| anyhow::anyhow!("failed to persist {}: {}", path.display(), err.error))?;
     Ok(())
+}
+
+pub fn delete_file(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err).with_context(|| format!("failed to delete {}", path.display())),
+    }
 }
 
 fn decode(raw: &[u8]) -> (String, Encoding) {
@@ -105,21 +122,34 @@ fn decode(raw: &[u8]) -> (String, Encoding) {
     (String::from_utf8_lossy(raw).into_owned(), Encoding::Utf8)
 }
 
-fn encode(text: &str, encoding: Encoding) -> Vec<u8> {
+fn encode(text: &str, encoding: Encoding) -> std::result::Result<Vec<u8>, String> {
     match encoding {
-        Encoding::Utf8 => text.as_bytes().to_vec(),
+        Encoding::Utf8 => Ok(text.as_bytes().to_vec()),
         Encoding::Utf8Bom => {
             let mut out = vec![0xEF, 0xBB, 0xBF];
             out.extend_from_slice(text.as_bytes());
-            out
+            Ok(out)
         }
-        Encoding::Gbk => GBK.encode(text).0.into_owned(),
-        Encoding::Windows1252 => WINDOWS_1252.encode(text).0.into_owned(),
+        Encoding::Gbk => encode_checked(text, Encoding::Gbk),
+        Encoding::Windows1252 => encode_checked(text, Encoding::Windows1252),
     }
 }
 
-/// SPEC: CRLF if any `\r\n` is present, else LF. Mixed input normalizes to the
-/// dominant CRLF on write; v1 does not preserve mixed styles.
+fn encode_checked(text: &str, encoding: Encoding) -> std::result::Result<Vec<u8>, String> {
+    let (cow, _, had_errors) = match encoding {
+        Encoding::Gbk => GBK.encode(text),
+        Encoding::Windows1252 => WINDOWS_1252.encode(text),
+        _ => unreachable!("checked encodings only"),
+    };
+    if had_errors {
+        return Err(format!("text cannot be encoded as {encoding:?}"));
+    }
+    Ok(match cow {
+        Cow::Borrowed(bytes) => bytes.to_vec(),
+        Cow::Owned(bytes) => bytes,
+    })
+}
+
 fn detect_newline(text: &str) -> Newline {
     if text.as_bytes().windows(2).any(|w| w == b"\r\n") {
         Newline::Crlf
@@ -128,19 +158,33 @@ fn detect_newline(text: &str) -> Newline {
     }
 }
 
-/// SPEC: split on `\n` and `\r\n` alike, treating CRLF as one separator so no
-/// ghost blank lines appear. The terminator is stripped from each logical line.
 fn split_lines(text: &str) -> Vec<String> {
     if text.is_empty() {
         return Vec::new();
     }
     let mut lines: Vec<String> = text
         .split('\n')
-        .map(|l| l.trim_end_matches('\r').to_string())
+        .map(|line| line.trim_end_matches('\r').to_string())
         .collect();
-    // A trailing newline yields a final empty element; it is metadata, not a line.
     if text.ends_with('\n') {
         lines.pop();
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gbk_render_fails_on_unencodable_text() {
+        let file = TextFile {
+            lines: vec!["原文".into()],
+            encoding: Encoding::Gbk,
+            newline: Newline::Lf,
+            trailing_newline: true,
+        };
+        let err = file.render_existing(&["😀".into()]).unwrap_err();
+        assert!(err.contains("Gbk"));
+    }
 }

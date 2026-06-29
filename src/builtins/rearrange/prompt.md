@@ -1,82 +1,121 @@
 # Squire rearrange format
 
-`asq rearrange` moves, copies, deletes, and reorders 1-based line-range chunks
-within a single file. Default mode is dry-run; pass `--yes` to write.
+`asq rearrange` applies an Arrange state-transition DSL. It rewrites only files declared by `arrange` blocks; `share` blocks provide read-only source material.
 
-## Model
-
-A spec has two parts: define chunks, then run exactly one action.
-Ranges are 1-based inclusive: `10-20` includes both line 10 and line 20.
-All ranges and anchors resolve against the original file snapshot.
-
-## DSL
-
-```ebnf
-spec       = { line } ;
-line       = blank | comment | file-decl | chunk-decl | action ;
-comment    = "#" , { any } ;                  (* whole line only; inline # is literal *)
-file-decl  = "file" , ws , path ;             (* exactly one per spec *)
-chunk-decl = "chunk" , ws , name , "=" , range ;
-action     = move | copy | delete | rearrange ;  (* exactly one per spec *)
-move       = "move"   , ws , region , ws , "to" , ws , anchor ;
-copy       = "copy"   , ws , region , ws , "to" , ws , anchor ;
-delete     = "delete" , ws , region ;
-rearrange  = "rearrange" , ws , namelist , "=>" , namelist , [ ws , "gap=" , gap ] ;
-region     = range | name ;                   (* parsed as range iff first char is a digit *)
-range      = number | number , "-" , number ; (* 1-based inclusive, start <= end *)
-anchor     = "start" | "end" | "before" , ws , number | "after" , ws , number ;
-namelist   = name , { "," , name } ;
-gap        = "slot" | "drop" | "error" ;
-name       = ( letter | "_" ) , { letter | digit | "_" } ;  (* identifier, not a keyword *)
-number     = nonzero-digit , { digit } ;       (* >= 1 *)
-```
-
-Keywords reserved (cannot be chunk names): `file chunk move copy delete
-rearrange to start end before after gap`.
-
-## Gap (rearrange only)
-
-Default `gap=slot`. Physical slots are the declared chunks ordered by line.
-`rearrange` permutes slot contents while undeclared lines between slots (gaps)
-stay pinned in their original inter-slot positions.
+## Core model
 
 ```text
-file a.md
-chunk A = 1-1
-chunk B = 3-3
-chunk C = 4-4
-chunk D = 6-6
-rearrange A, B, C, D => B, D, C, A
+share   = read-only named material
+arrange = one target file's complete before -> after transition
 ```
 
-Given `A, h1, B, C, h2, D` this yields `B, h1, D, C, h2, A`.
+All ranges are 1-based inclusive logical lines. `A-end` means through EOF and is the recommended way to show full-file coverage. Numeric EOF guards such as `21-200` are accepted when they resolve to the actual final line.
 
-`gap=drop` discards gaps; `gap=error` fails if any non-empty gap exists.
-`from` is order-insensitive (a set); `to` defines the new order.
+## Syntax
 
-## CLI Usage (for AGENT)
+```text
+share <slug> = <file>
+  <name> = <range>
+end share
+
+arrange <file>
+  before <file-state>
+  after  <file-state>
+end arrange
+
+arrange <slug> = <file>
+  before <file-state>
+  after  <file-state>
+end arrange
+```
+
+```text
+<range>      = N | A-B | A-end
+<file-state> = <missing> | <empty> | <sequence>
+```
+
+Before sequence items:
+
+```text
+<range>
+<name> = <range>
+<gap:name>
+```
+
+After sequence items:
+
+```text
+<range>
+<name>
+<gap:name>
+<slug>::<name>
+```
+
+Identifiers match `[A-Za-z_][A-Za-z0-9_]*`.
+
+## Invariants
+
+- `before` describes the complete target file pre-state.
+- Hidden gaps are invalid. If ranges are not adjacent, declare `<gap:name>` between them.
+- `after` can only reference material declared in current `before`, a `share`, or another slugged arrange's named before chunks.
+- One normalized path can appear in at most one `arrange` and at most one `share`, and not both.
+- There is one pre-state snapshot. Arrange blocks have no execution order.
+- `<empty>` is a 0-byte file. `<missing>` means the file does not exist.
+
+## Examples
+
+Single-file reorder:
+
+```text
+arrange src/foo.rs
+  before api = 1-60, parser = 61-140, rest = 141-end
+  after  api, rest, parser
+end arrange
+```
+
+Explicit gap:
+
+```text
+arrange src/foo.rs
+  before A = 1-10, <gap:comment>, B = 20-end
+  after  B, <gap:comment>, A
+end arrange
+```
+
+Cross-file extraction:
+
+```text
+arrange main = src/foo.rs
+  before api = 1-60, parser = 61-140, rest = 141-end
+  after  api, rest
+end arrange
+
+arrange src/parser.rs
+  before <missing>
+  after  main::parser
+end arrange
+```
+
+Create from share:
+
+```text
+share tpl = snippets/header.rs
+  header = 1-end
+end share
+
+arrange src/foo.rs
+  before body = 1-end
+  after  tpl::header, body
+end arrange
+```
+
+## CLI
 
 ```bash
-# Pipe via stdin (recommended)
-echo '<spec>' | asq rearrange --stdin --yes
-
-# Dry-run first (default; no --yes needed)
-asq rearrange --stdin < spec.txt
-
-# From a file (use `asq tmp` for a scratch file)
-asq tmp spec.txt          # prints a temp path
-asq rearrange -f <path> --yes
-
-# JSON output for machine parsing
-asq rearrange --stdin --json < spec.txt
+asq rearrange --stdin < spec.txt        # dry-run preview, no write
+asq rearrange --stdin --yes < spec.txt  # apply
+asq rearrange -f spec.txt               # read spec file
+asq rearrange --prompt                  # print this guide
 ```
 
-Flags: `-y/--yes` writes; `--dry-run` is the default; `--prompt` prints this.
-
-## Safety
-
-- Default is dry-run; nothing is written without `--yes`.
-- Exactly one action per invocation; one target file (v1).
-- Line numbers are 1-based inclusive.
-- Same-file chunks must not overlap.
-- Original newline style and encoding are preserved.
+`--dry-run` overrides `--yes`.
