@@ -1,6 +1,6 @@
 ---
 change: "rearrange-dst"
-updated: "2026-06-29T22:26+08:00"
+updated: "2026-06-29T22:42+08:00"
 ---
 
 # Tasks
@@ -68,6 +68,7 @@ updated: "2026-06-29T22:26+08:00"
 - [x] Add regression tests for review findings and high-value invariants.
 - [x] Fix follow-up parser ambiguity: unslugged `arrange` targets containing `=` now fail; use `arrange <slug> = <file>` to target paths containing `=`.
 - [x] Enforce spaced structural assignment delimiter ` = ` for `share`, slugged `arrange`, and named ranges.
+- [x] Add and align `src/builtins/rearrange/SPEC.md` as the long-term developer maintenance contract for current DST behaviour.
 
 **Verification**:
 - Agent: `cargo test --quiet` passed: 173 tests.
@@ -93,3 +94,4 @@ updated: "2026-06-29T22:26+08:00"
 - 2026-06-29T20:11+08:00: DST implementation completed; tests, clippy, and fmt passed.
 - 2026-06-29T21:54+08:00: External review findings F1-F5 fixed; stale old-v1 model removed; regression tests added.
 - 2026-06-29T22:26+08:00: Follow-up ambiguity fixed: structural `=` now requires ` = `, and unslugged arrange paths containing `=` fail instead of retargeting.
+- 2026-06-29T22:42+08:00: Added/rewrote `src/builtins/rearrange/SPEC.md` as a context-portable maintenance contract aligned with current parser/planner/apply behaviour.

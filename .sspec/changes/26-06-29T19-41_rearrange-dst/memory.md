@@ -1,6 +1,6 @@
 # Memory: rearrange-dst
 
-**Updated**: 2026-06-29T22:26+08:00
+**Updated**: 2026-06-29T22:42+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -34,6 +34,7 @@ Implementation complete; change is in REVIEW. External review findings F1-F5 hav
 - `src/builtins/rearrange/plan.rs` — pre-state snapshot, semantic validation, material registry, materialization, apply.
 - `src/builtins/rearrange/textio.rs` — text decode/render/write/delete with mkdir and encoding-safe writes.
 - `src/builtins/rearrange/output.rs` — compact/json DST preview.
+- `src/builtins/rearrange/SPEC.md` — developer-facing maintenance contract for current syntax, invariants, apply safety, output, and test obligations.
 - `tests/rearrange.rs` — DST integration coverage.
 
 ## Knowledge
@@ -49,6 +50,7 @@ Implementation complete; change is in REVIEW. External review findings F1-F5 hav
 - [2026-06-29T21:54+08:00] [Decision] External review F2 initially resolved by treating `arrange slug=path` as slugged arrange syntax; follow-up review found this retargeted legitimate paths containing `=`.
 - [2026-06-29T21:54+08:00] [Decision] External review F4 resolved with write preparation before persistence and partial-apply risk reporting; full rollback remains out of scope.
 - [2026-06-29T22:26+08:00] [Decision] Structural assignment now requires the exact ` = ` delimiter for `share`, slugged `arrange`, and named ranges. Unslugged `arrange` paths containing `=` fail as ambiguous; use `arrange <slug> = <file>` for those paths.
+- [2026-06-29T22:42+08:00] [Decision] `src/builtins/rearrange/SPEC.md` is the durable maintenance contract for the implementation. Keep it aligned with actual parser/planner/apply behaviour and tests; avoid documenting unimplemented preview features as guarantees.
 
 ## Milestones
 
@@ -56,3 +58,4 @@ Implementation complete; change is in REVIEW. External review findings F1-F5 hav
 - [2026-06-29T20:11+08:00] Implemented DST rewrite for `asq rearrange`; `cargo test --quiet` (161 tests), clippy, fmt, and sandbox CLI checks passed.
 - [2026-06-29T21:54+08:00] Fixed external review findings F1-F5, deleted stale `model.rs`, added regression tests; `cargo test --quiet` (170 tests), clippy, and fmt passed.
 - [2026-06-29T22:26+08:00] Fixed follow-up parser ambiguity for unspaced `=` and paths containing `=`; `cargo test --quiet` (173 tests), clippy, and fmt passed.
+- [2026-06-29T22:42+08:00] Added and normalized `src/builtins/rearrange/SPEC.md` for future maintainers.
