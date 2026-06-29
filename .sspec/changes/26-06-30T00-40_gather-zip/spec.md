@@ -1,6 +1,6 @@
 ---
 name: gather-zip
-status: PLANNING
+status: DONE
 change-type: single
 created: 2026-06-30T00:40:14
 reference: null

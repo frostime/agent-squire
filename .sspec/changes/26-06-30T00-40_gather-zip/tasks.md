@@ -24,11 +24,11 @@ updated: "2026-06-30T00:45:00"
 ---
 
 ### Phase 2: File collection + artifact generation ✅
-- [ ] Implement `collect_file_entries()` — traverse Sources, expand Dir/Glob/SelectedGlob, resolve File paths, dedup by `files/<relative_path>` in `src/builtins/gather/zip.rs`
-- [ ] Implement `generate_artifacts()` — execute Cmd sources, call `render_tree()` for Tree sources, slice ranged File sources, produce `ArtifactEntry` list in `src/builtins/gather/zip.rs`
-- [ ] Implement `build_manifest()` — convert `Vec<FileEntry>` + `Vec<ArtifactEntry>` + sources into `Manifest` struct in `src/builtins/gather/zip.rs`
-- [ ] Implement `assemble_staging_dir()` — create tempdir, copy files to `files/`, write artifacts to `artifacts/`, write `manifest.json` in `src/builtins/gather/zip.rs`
-- [ ] Implement `sanitize_filename()` helper — replace `/ \ : * ? " < > |` and spaces with `-` in `src/builtins/gather/zip.rs`
+- [x] Implement `collect_file_entries()` — traverse Sources, expand Dir/Glob/SelectedGlob, resolve File paths, dedup by `files/<relative_path>` in `src/builtins/gather/zip.rs`
+- [x] Implement `generate_artifacts()` — execute Cmd sources, call `render_tree()` for Tree sources, slice ranged File sources, produce `ArtifactEntry` list in `src/builtins/gather/zip.rs`
+- [x] Implement `build_manifest()` — convert `Vec<FileEntry>` + `Vec<ArtifactEntry>` + sources into `Manifest` struct in `src/builtins/gather/zip.rs`
+- [x] Implement `assemble_staging_dir()` — create tempdir, copy files to `files/`, write artifacts to `artifacts/`, write `manifest.json` in `src/builtins/gather/zip.rs`
+- [x] Implement `sanitize_filename()` helper — replace `/ \ : * ? " < > |` and spaces with `-` in `src/builtins/gather/zip.rs`
 **Verification**:
 - Agent: `cargo test --lib` (existing + new unit tests for sanitize, dedup)
 - Agent: manual `dbg!` on staging dir structure matches design.md structure
@@ -36,9 +36,9 @@ updated: "2026-06-30T00:45:00"
 ---
 
 ### Phase 3: External zip creation + output ✅
-- [ ] Implement `create_zip_archive()` — `#[cfg(windows)]` → `powershell Compress-Archive`, `#[cfg(not(windows))]` → `zip -r` in `src/builtins/gather/zip.rs`
+- [x] Implement `create_zip_archive()` — `#[cfg(windows)]` → `powershell Compress-Archive`, `#[cfg(not(windows))]` → `zip -r` in `src/builtins/gather/zip.rs`
 - [x] Implement cross-volume rename fallback: `fs::rename` → on error `fs::copy` + `fs::remove_file` in `src/builtins/gather/zip.rs`
-- [ ] Implement `assemble_zip()` top-level orchestrator wiring phases 2+3 in `src/builtins/gather/zip.rs`
+- [x] Implement `assemble_zip()` top-level orchestrator wiring phases 2+3 in `src/builtins/gather/zip.rs`
 **Verification**:
 - Agent: `cargo test --lib`
 - Agent: manually run `/zip` in interactive mode → verify zip is created in cwd, unzippable, contains correct structure
@@ -46,9 +46,9 @@ updated: "2026-06-30T00:45:00"
 ---
 
 ### Phase 4: Safety checks + warning UX ✅
-- [ ] Implement `is_binary()` — read first 8KB, detect null byte in `src/builtins/gather/zip.rs`
-- [ ] Implement `collect_warnings()` — iterate FileEntries, classify binary + >10MB, return warning list in `src/builtins/gather/zip.rs`
-- [ ] Implement `confirm_warnings()` — print merged warning list, read stdin Y/n in `src/builtins/gather/zip.rs`
+- [x] Implement `is_binary()` — read first 8KB, detect null byte in `src/builtins/gather/zip.rs`
+- [x] Implement `collect_warnings()` — iterate FileEntries, classify binary + >10MB, return warning list in `src/builtins/gather/zip.rs`
+- [x] Implement `confirm_warnings()` — print merged warning list, read stdin Y/n in `src/builtins/gather/zip.rs`
 **Verification**:
 - Agent: `cargo test --lib` (unit tests for is_binary with text/binary fixtures)
 - Agent: manual `/zip` with a .png and >10MB file → warning display + Y/n prompt
