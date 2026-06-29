@@ -27,7 +27,7 @@ Non-goals:
 - Repair imports, module declarations, formatting, or compilation errors.
 - Depend on block execution order.
 
-## 2. Line-oriented syntax
+## 2. Syntax
 
 The parser is line-oriented.
 
@@ -126,7 +126,9 @@ share arrange before after end missing empty gap
 
 Hyphens are not valid inside identifiers. Use underscores.
 
-## 3. Path contract
+## 3. Paths and snapshot
+
+### 3.1 Path contract
 
 Paths are interpreted relative to the command working directory unless absolute.
 Absolute paths are accepted only if their normalized/canonicalized identity remains inside the command working directory.
@@ -145,7 +147,7 @@ Path safety rules:
 
 If future code cannot determine whether two paths identify the same file, it should fail closed rather than risk ambiguous ownership.
 
-## 4. Pre-state snapshot
+### 3.2 Pre-state snapshot
 
 A single invocation has one pre-state snapshot.
 
@@ -167,67 +169,28 @@ end arrange
 
 `main::parser` refers to lines `20-80` from `src/main.rs` before the invocation, not to the file after applying the first arrange block.
 
-## 5. Material model
+## 4. Blocks, material, and state
 
-Material is a slice of logical lines from a pre-state file.
+### 4.1 Material model
 
-Material can be:
+Material is a slice of logical lines from a pre-state file. Identity is provenance-based, not text-based: two chunks with identical text are distinct if they come from different declared ranges.
 
-- named local chunk: `name = range` in the current arrange `before`;
-- anonymous local range: `range` in the current arrange `before`;
-- explicit local gap: `<gap:name>` in the current arrange `before`;
+Sources:
+
+- named local chunk: `name = range` in current arrange `before`;
+- anonymous local range: `range` in current arrange `before`;
+- explicit local gap: `<gap:name>` in current arrange `before`;
 - external named chunk: `slug::name` from a `share` block or another slugged arrange.
 
-Material identity is provenance-based, not text-based. Two chunks with identical text are distinct if they come from different declared ranges.
+### 4.2 Block rules
 
-## 6. Share blocks
+`share` blocks are read-only. The source file must exist and is never modified.
 
-A `share` block declares read-only named material:
+`arrange` blocks are the only writers. Only named `before` chunks are exported through `<slug>::<name>`; anonymous ranges and gaps are local-only. An arrange may not reference its own slug in `after`.
 
-```text
-share <slug> = <file>
-  <name> = <range>
-end share
-```
+Share slugs, arrange slugs, and chunk names share identifier rules and reserved-keyword restrictions.
 
-Rules:
-
-- The source file must exist and be readable text.
-- The source file is never modified by the share block.
-- Each share entry declares one named range.
-- Share entry names must be unique inside the share block.
-- Share slugs share one global namespace with slugged arrange blocks.
-- A share item is referenced as `<slug>::<name>` from `after`.
-
-## 7. Arrange blocks
-
-An `arrange` block declares one target file transition:
-
-```text
-arrange <file>
-  before <file-state>
-  after  <file-state>
-end arrange
-```
-
-A slugged arrange also exports named before chunks to other arrange blocks:
-
-```text
-arrange <slug> = <file>
-  before <name> = <range>, ...
-  after  ...
-end arrange
-```
-
-Rules:
-
-- The target file is the only file this block may create, rewrite, truncate, or delete.
-- Only named `before` chunks are exported through `<slug>::<name>`.
-- Anonymous ranges and gaps are local-only.
-- An arrange block may not reference its own slug in `after`; it must reference its own material locally.
-- Arrange slugs share one global namespace with share slugs and other arrange slugs.
-
-## 8. File-state model
+### 4.3 File-state model
 
 A file state is exactly one of:
 
@@ -261,7 +224,9 @@ Valid transitions:
 
 `<missing> -> <missing>` is invalid.
 
-## 9. Complete-before invariant
+## 5. Semantic invariants
+
+### 5.1 Complete-before invariant
 
 Every `arrange before` must describe the complete pre-state of its target file.
 
@@ -294,7 +259,7 @@ end arrange
 
 Numeric EOF guards such as `21-200` are accepted only when they resolve to the actual final line. Prefer `A-end` for EOF ranges.
 
-## 10. Explicit-gap invariant
+### 5.2 Explicit-gap invariant
 
 There are no hidden gaps.
 
@@ -315,7 +280,7 @@ Rules:
 - A gap may be copied, moved, preserved, or deleted by including or omitting it from `after`.
 - A gap is never exported through `<slug>::<name>`.
 
-## 11. After-provenance invariant
+### 5.3 After-provenance invariant
 
 Every `after` item must resolve to declared material.
 
@@ -336,23 +301,17 @@ Disallowed:
 
 This invariant keeps `after` auditable: every final line must have declared provenance.
 
-## 12. Text I/O and rendering
+## 6. Runtime behaviour
+
+### 6.1 Text I/O
 
 Ranges select whole logical lines, not byte offsets or half-lines.
 
-Input decoding:
+Unsupported or invalid text fails with `ENCODING_ERROR`; lossy replacement is not allowed.
 
-- Supported existing-file encodings are UTF-8, UTF-8 BOM, GBK, and Windows-1252.
-- Unsupported or invalid text fails with `ENCODING_ERROR` rather than being rewritten through lossy replacement.
+Existing non-empty target rewrites preserve the detected newline style and final-newline convention. Newly created non-empty files use LF with a final newline. `after <empty>` writes zero bytes; `after <missing>` deletes.
 
-Rendering:
-
-- Existing non-empty target rewrites preserve the target file's detected newline style and final-newline convention.
-- Newly created non-empty files use LF and a final newline.
-- `after <empty>` writes a zero-byte file.
-- `after <missing>` deletes the file or leaves it absent.
-
-## 13. Apply safety
+### 6.2 Apply safety
 
 Default mode is preview-only. Applying changes requires `--yes`. `--dry-run` overrides `--yes`.
 
@@ -369,46 +328,17 @@ Safety rules:
 
 This is not a transactional rollback system.
 
-## 14. Preview and JSON output
+### 6.3 Preview and output
 
-Preview output is part of the safety surface. It must be predictable and reviewable.
+Preview output is part of the safety surface: it must be predictable and reviewable.
 
-Current compact preview includes:
+Compact preview and JSON must represent the same semantic model. Future preview additions may improve reviewability, but they must not change DSL semantics.
 
-- invocation state: dry-run, written, or no-op;
-- share paths and resolved item line counts;
-- target paths and optional slugs;
-- before and after summaries;
-- exports from slugged arrange blocks;
-- explicit gaps and resolved line intervals;
-- derived effects;
-- final changed/no-write summary.
+Effects are derived from before/after differences. They are informational labels, not DSL primitives.
 
-Current JSON output uses the project output envelope and includes:
+## 7. Maintenance
 
-- `written`;
-- `changed`;
-- `shares`;
-- `targets`.
-
-Machine-readable output must represent the same semantic model as compact preview. Future preview additions should improve reviewability without changing DSL semantics.
-
-## 15. Derived effects
-
-The DSL does not encode edit actions. Effects are derived from before/after differences.
-
-Current effects are coarse target-level descriptions such as:
-
-- create file;
-- delete file;
-- create empty file;
-- clear file;
-- rewrite file;
-- no-op.
-
-Future preview code may derive more detailed labels, but those labels must remain informational. They are not DSL primitives.
-
-## 16. Parser policy
+### 7.1 Parser policy
 
 The parser should reject likely agent mistakes rather than silently ignoring malformed fragments.
 
@@ -427,78 +357,11 @@ Reject:
 - unspaced structural assignment delimiters;
 - ambiguous opener syntax.
 
-## 17. Test obligations
+### 7.2 Test obligations
 
-Changes to parser, planner, path handling, text I/O, preview, or apply behaviour should keep coverage for these cases.
+Changes to parser, planner, path handling, text I/O, preview, or apply must keep existing test coverage for the invariants in this file. Do not remove tests without replacing equivalent coverage.
 
-### 17.1 Parser
-
-- valid share and arrange blocks;
-- slugged arrange;
-- full-line comments and blank lines;
-- invalid block nesting or missing `end`;
-- empty document rejection;
-- empty sequence item rejection;
-- dangling comma rejection;
-- malformed range rejection;
-- unspaced `=` rejection;
-- ambiguous `arrange foo=bar.md` rejection;
-- `arrange slug = foo=bar.md` acceptance.
-
-### 17.2 Path identity and safety
-
-- `./a` and `a` resolve to the same identity;
-- duplicate arrange target rejected;
-- duplicate share source rejected;
-- share/arrange same normalized path rejected;
-- arrange target prefix conflict rejected;
-- path escape through `..` rejected;
-- symlink escape rejected where supported;
-- conservative failure when identity cannot be determined.
-
-### 17.3 Before validation
-
-- missing target requires `before <missing>`;
-- empty target requires `before <empty>`;
-- non-empty target requires full sequence coverage;
-- hidden gap rejected;
-- explicit non-empty gap accepted;
-- empty gap rejected;
-- gap at sequence boundary rejected;
-- overlapping or out-of-order ranges rejected;
-- numeric EOF guard accepted only when it resolves to actual EOF.
-
-### 17.4 After provenance
-
-- local named chunk accepted;
-- local anonymous range accepted only if declared anonymously;
-- named chunk cannot be referenced by raw range;
-- share reference accepted;
-- slugged arrange before chunk accepted;
-- current arrange self-slug reference rejected;
-- external anonymous range rejected;
-- external gap rejected;
-- undeclared reference rejected.
-
-### 17.5 Text I/O
-
-- LF and CRLF preservation for existing files;
-- final-newline preservation for existing files;
-- created non-empty file uses LF with final newline;
-- `<empty>` creates or preserves zero-byte file;
-- undecodable text fails without lossy rewrite.
-
-### 17.6 Apply safety
-
-- default invocation does not write;
-- explicit `--yes` writes only arrange targets;
-- `--dry-run` overrides `--yes`;
-- share files are never modified;
-- parent directories are created when needed;
-- no writes happen after validation failure;
-- partial filesystem failure is reported explicitly.
-
-## 18. Evolution rules
+### 7.3 Evolution rules
 
 Future extensions should preserve the core model: a reviewable state declaration over known line material.
 

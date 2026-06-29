@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.10.0] — 2026-06-30
+
+### Added
+
+- **`rearrange` command** (alias `rearr`) based on the Arrange state-transition DSL.
+  - Declarative file-level `before -> after` transitions instead of sequential edit actions.
+  - `share` blocks provide read-only named material from pre-state files.
+  - `arrange` blocks declare complete target file transformations with full semantic validation.
+  - Dry-run preview by default; `--yes` applies changes after all validation passes.
+
 ## [v0.9.2] — 2026-06-27
 
 ### Added
