@@ -70,8 +70,26 @@ pub fn read_sources(cwd: &Path, respect_gitignore: bool) -> Result<InteractiveRe
                     };
                     println!("  fzf selection now {mode}");
                 }
-                InteractiveCommand::Zip { .. } => {
-                    println!("  /zip: not yet implemented");
+                InteractiveCommand::Zip { path, and_done } => {
+                    let output_path = path.map(PathBuf::from);
+                    match super::zip::assemble_zip(
+                        &sources,
+                        cwd,
+                        respect_gitignore,
+                        output_path,
+                    ) {
+                        Ok(Some(_)) => {
+                            if and_done {
+                                break;
+                            }
+                        }
+                        Ok(None) => {
+                            // User cancelled at warning prompt
+                        }
+                        Err(err) => {
+                            eprintln!("error: {err}");
+                        }
+                    }
                 }
             }
             continue;
@@ -129,9 +147,7 @@ pub fn parse_interactive_command(line: &str) -> Option<InteractiveCommand> {
                 and_done: false,
             });
         }
-        let (path_part, and_done) = if rest == "/done" {
-            ("", true)
-        } else if rest == "--done" {
+        let (path_part, and_done) = if rest == "/done" || rest == "--done" {
             ("", true)
         } else if let Some(p) = rest.strip_suffix(" /done") {
             (p.trim(), true)
@@ -306,6 +322,7 @@ fn print_interactive_help() {
         "Commands:\n\
            /help        show this help\n\
            /list        show selected sources\n\
+           /zip [path]  package sources into a zip\n\
            /done        render selected sources\n\
            /exit        quit without rendering\n\
            /all         toggle gitignored fzf candidates\n\

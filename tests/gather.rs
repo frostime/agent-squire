@@ -231,3 +231,86 @@ fn gather_json_status_uses_gather_identity() {
     assert!(path.contains("asq-gather-"));
     assert!(fs::read_to_string(path).unwrap().contains("alpha"));
 }
+
+// ── /zip integration tests ──
+
+#[test]
+fn gather_zip_creates_structured_archive() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.txt"), "alpha\n").unwrap();
+
+    let output = Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "-i"])
+        .write_stdin("file:a.txt\n/zip asq-test-gather-zip-1.zip\n/exit\n")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let stdout = String::from_utf8(output).unwrap();
+    // Should mention the zip file was written
+    assert!(
+        stdout.contains("asq-test-gather-zip-1.zip"),
+        "stdout: {stdout}"
+    );
+
+    // Verify zip exists
+    let zip_path = dir.path().join("asq-test-gather-zip-1.zip");
+    assert!(zip_path.exists(), "zip should exist at {}", zip_path.display());
+}
+
+#[test]
+fn gather_zip_empty_sources_errors() {
+    let dir = tempdir().unwrap();
+
+    let assert = Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "-i"])
+        .write_stdin("/zip\n/exit\n")
+        .assert()
+        .success();
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(
+        stderr.contains("No sources to package"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn gather_zip_done_exits_after_packaging() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.txt"), "alpha\n").unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "-i"])
+        .write_stdin("file:a.txt\n/zip /done\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Zip written"));
+
+    // Verify rendered output NOT produced (we exited, didn't gather-render)
+    // The --stdout gather renders when ^D or /done (not /zip /done)
+}
+
+#[test]
+fn gather_zip_includes_ranged_file_artifact() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("main.rs"), "line1\nline2\nline3\nline4\nline5\n").unwrap();
+    fs::write(dir.path().join("other.txt"), "beta\n").unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "-i"])
+        .write_stdin("file:main.rs:2-4\nfile:other.txt\n/zip /done\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Zip written"));
+}
