@@ -109,6 +109,13 @@ pub enum CliCommand {
     PatchEdit(builtins::patch_edit::PatchEditArgs),
 
     #[command(
+        name = "rearrange",
+        alias = "rearr",
+        about = "Rewrite files with the Arrange before/after state-transition DSL"
+    )]
+    Rearrange(builtins::rearrange::RearrangeArgs),
+
+    #[command(
         name = "compose",
         about = "Render agent context templates into bounded UTF-8 output"
     )]
@@ -201,6 +208,7 @@ fn try_main() -> Result<u8> {
         CliCommand::MdBacklinks(args) => builtins::md_backlinks::run(args, &ctx),
         CliCommand::ReadRange(args) => builtins::read_range::run(args, &ctx),
         CliCommand::PatchEdit(args) => builtins::patch_edit::run(args, &ctx),
+        CliCommand::Rearrange(args) => builtins::rearrange::run(args, &ctx),
         CliCommand::Compose(args) => builtins::compose::run(args, &ctx),
         CliCommand::Gather(args) => builtins::gather::run(args, &ctx),
         CliCommand::Img(args) => builtins::img::run(args, &ctx),
