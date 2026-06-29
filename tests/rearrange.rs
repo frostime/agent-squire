@@ -245,22 +245,71 @@ fn invalid_utf8_bom_file_fails_without_lossy_rewrite() {
 }
 
 #[test]
-fn unspaced_slugged_arrange_does_not_become_path() {
+fn ambiguous_unspaced_arrange_equals_does_not_retarget() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join("header.rs"), "h\n").unwrap();
+    fs::write(dir.path().join("foo=bar.md"), "INTENDED\n").unwrap();
+    fs::write(dir.path().join("bar.md"), "WRONG\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin", "--yes"])
+        .write_stdin("arrange foo=bar.md\n  before all = 1-end\n  after <empty>\nend arrange")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("INVALID_SPEC"));
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("foo=bar.md")).unwrap(),
+        "INTENDED\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("bar.md")).unwrap(),
+        "WRONG\n"
+    );
+}
+
+#[test]
+fn slugged_arrange_allows_equals_in_target_path() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("foo=bar.md"), "content\n").unwrap();
 
     squire()
         .current_dir(dir.path())
         .args(["rearrange", "--stdin", "--yes"])
         .write_stdin(
-            "share tpl=header.rs\n  header=1-end\nend share\n\narrange main=src/foo.rs\n  before <missing>\n  after tpl::header\nend arrange",
+            "arrange target = foo=bar.md\n  before all = 1-end\n  after <empty>\nend arrange",
         )
         .assert()
         .success()
-        .stdout(predicate::str::contains("target main = src/foo.rs"));
+        .stdout(predicate::str::contains("target target = foo=bar.md"));
 
-    assert!(dir.path().join("src/foo.rs").is_file());
-    assert!(!dir.path().join("main=src/foo.rs").exists());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("foo=bar.md")).unwrap(),
+        ""
+    );
+}
+
+#[test]
+fn structural_equals_requires_spaces() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("header.rs"), "h\n").unwrap();
+    fs::write(dir.path().join("a.md"), "A\n").unwrap();
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin"])
+        .write_stdin("share tpl=header.rs\n  header = 1-end\nend share")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("INVALID_SPEC"));
+
+    squire()
+        .current_dir(dir.path())
+        .args(["rearrange", "--stdin"])
+        .write_stdin("arrange a.md\n  before A=1-end\n  after A\nend arrange")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("INVALID_SPEC"));
 }
 
 #[test]

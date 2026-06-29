@@ -1,6 +1,6 @@
 # Memory: rearrange-dst
 
-**Updated**: 2026-06-29T21:54+08:00
+**Updated**: 2026-06-29T22:26+08:00
 
 ## Git Baseline (Immutable)
 <!-- Captured during `sspec change new` before any change files are written.
@@ -46,11 +46,13 @@ Implementation complete; change is in REVIEW. External review findings F1-F5 hav
 - [2026-06-29T19:41+08:00] [Decision] `before` coverage accepts numeric EOF ranges when they resolve to the actual file end; prompt should recommend `A-end` as the clearer default.
 - [2026-06-29T19:41+08:00] [Decision] Path prefix conflicts in the same spec should fail to avoid implicit directory state transitions.
 - [2026-06-29T20:11+08:00] [Gotcha] `cargo test rearrange --quiet` filters integration tests by test name; full confidence came from `cargo test --quiet` plus sandbox CLI dry-run/yes checks.
-- [2026-06-29T21:54+08:00] [Decision] External review F2 resolved by treating `arrange slug=path` as slugged arrange syntax (same whitespace-insensitive `=` handling as `share`) to avoid silently creating a literal `slug=path` file.
+- [2026-06-29T21:54+08:00] [Decision] External review F2 initially resolved by treating `arrange slug=path` as slugged arrange syntax; follow-up review found this retargeted legitimate paths containing `=`.
 - [2026-06-29T21:54+08:00] [Decision] External review F4 resolved with write preparation before persistence and partial-apply risk reporting; full rollback remains out of scope.
+- [2026-06-29T22:26+08:00] [Decision] Structural assignment now requires the exact ` = ` delimiter for `share`, slugged `arrange`, and named ranges. Unslugged `arrange` paths containing `=` fail as ambiguous; use `arrange <slug> = <file>` for those paths.
 
 ## Milestones
 
 - [2026-06-29T19:41+08:00] Created new `rearrange-dst` change and moved root `SPEC.md` to `reference/DST-SPEC.md`.
 - [2026-06-29T20:11+08:00] Implemented DST rewrite for `asq rearrange`; `cargo test --quiet` (161 tests), clippy, fmt, and sandbox CLI checks passed.
 - [2026-06-29T21:54+08:00] Fixed external review findings F1-F5, deleted stale `model.rs`, added regression tests; `cargo test --quiet` (170 tests), clippy, and fmt passed.
+- [2026-06-29T22:26+08:00] Fixed follow-up parser ambiguity for unspaced `=` and paths containing `=`; `cargo test --quiet` (173 tests), clippy, and fmt passed.

@@ -1,6 +1,6 @@
 ---
 change: "rearrange-dst"
-updated: "2026-06-29T21:54+08:00"
+updated: "2026-06-29T22:26+08:00"
 ---
 
 # Tasks
@@ -60,15 +60,17 @@ updated: "2026-06-29T21:54+08:00"
 
 ### Feedback Tasks ✅
 - [x] Fix external review F1: fail on invalid UTF-8 BOM text instead of lossy rewrite.
-- [x] Fix external review F2: parse `arrange slug=path` as slugged arrange, not a literal path.
+- [x] Fix external review F2: reject ambiguous unspaced `arrange slug=path` instead of treating it as a literal path or slugged arrange.
 - [x] Fix external review F3: reject empty sequence items and trailing commas.
 - [x] Fix external review F4: prepare all writes before persisting and report partial-apply risk on later failure.
 - [x] Fix external review F5: update `rearrange --help` summary.
 - [x] Delete stale old-v1 `src/builtins/rearrange/model.rs`.
 - [x] Add regression tests for review findings and high-value invariants.
+- [x] Fix follow-up parser ambiguity: unslugged `arrange` targets containing `=` now fail; use `arrange <slug> = <file>` to target paths containing `=`.
+- [x] Enforce spaced structural assignment delimiter ` = ` for `share`, slugged `arrange`, and named ranges.
 
 **Verification**:
-- Agent: `cargo test --quiet` passed: 170 tests.
+- Agent: `cargo test --quiet` passed: 173 tests.
 - Agent: `cargo clippy --all-targets --all-features -- -D warnings` passed.
 - Agent: `cargo fmt --check` passed.
 
@@ -90,3 +92,4 @@ updated: "2026-06-29T21:54+08:00"
 - 2026-06-29T19:41+08:00: New replacement change created; root `SPEC.md` moved into `reference/DST-SPEC.md`.
 - 2026-06-29T20:11+08:00: DST implementation completed; tests, clippy, and fmt passed.
 - 2026-06-29T21:54+08:00: External review findings F1-F5 fixed; stale old-v1 model removed; regression tests added.
+- 2026-06-29T22:26+08:00: Follow-up ambiguity fixed: structural `=` now requires ` = `, and unslugged arrange paths containing `=` fail instead of retargeting.

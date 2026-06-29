@@ -163,12 +163,8 @@ impl<'a> Parser<'a> {
 }
 
 fn parse_slug_path(rest: &str, line: usize, kind: &str) -> Result<(String, String)> {
-    let (slug, path) = rest.split_once('=').ok_or_else(|| {
-        err_at(
-            ErrorCode::InvalidSpec,
-            line,
-            format!("{kind} block opener must be `{kind} <slug> = <file>`"),
-        )
+    let (slug, path) = split_spaced_equals(rest, line, || {
+        format!("{kind} block opener must be `{kind} <slug> = <file>`")
     })?;
     let slug = slug.trim();
     validate_ident(slug, line)?;
@@ -184,7 +180,7 @@ fn parse_slug_path(rest: &str, line: usize, kind: &str) -> Result<(String, Strin
 }
 
 fn parse_optional_slug_path(rest: &str, line: usize) -> Result<(Option<String>, String)> {
-    if let Some((slug, path)) = rest.split_once('=') {
+    if let Some((slug, path)) = rest.split_once(" = ") {
         let slug = slug.trim();
         validate_ident(slug, line)?;
         let path = path.trim();
@@ -197,6 +193,13 @@ fn parse_optional_slug_path(rest: &str, line: usize) -> Result<(Option<String>, 
         }
         Ok((Some(slug.to_string()), path.to_string()))
     } else {
+        if rest.contains('=') {
+            return Err(err_at(
+                ErrorCode::InvalidSpec,
+                line,
+                "ambiguous arrange opener; use `arrange <slug> = <file>` or a slugged arrange for paths containing `=`",
+            ));
+        }
         let path = rest.trim();
         if path.is_empty() {
             return Err(err_at(
@@ -258,7 +261,7 @@ fn parse_before_item(raw: &str, line: usize) -> Result<BeforeItem> {
             line,
         });
     }
-    if let Some((name, range)) = raw.split_once('=') {
+    if let Some((name, range)) = raw.split_once(" = ") {
         let name = name.trim();
         validate_ident(name, line)?;
         return Ok(BeforeItem::Named {
@@ -266,6 +269,13 @@ fn parse_before_item(raw: &str, line: usize) -> Result<BeforeItem> {
             range: parse_range(range.trim(), line)?,
             line,
         });
+    }
+    if raw.contains('=') {
+        return Err(err_at(
+            ErrorCode::InvalidSpec,
+            line,
+            format!("expected `<name> = <range>`, got: {raw}"),
+        ));
     }
     Ok(BeforeItem::Anonymous {
         range: parse_range(raw, line)?,
@@ -308,16 +318,21 @@ fn parse_gap(raw: &str) -> Option<&str> {
 }
 
 fn parse_name_range(raw: &str, line: usize) -> Result<(String, RangeExpr)> {
-    let (name, range) = raw.split_once('=').ok_or_else(|| {
-        err_at(
-            ErrorCode::InvalidSpec,
-            line,
-            format!("expected `<name> = <range>`, got: {raw}"),
-        )
+    let (name, range) = split_spaced_equals(raw, line, || {
+        format!("expected `<name> = <range>`, got: {raw}")
     })?;
     let name = name.trim();
     validate_ident(name, line)?;
     Ok((name.to_string(), parse_range(range.trim(), line)?))
+}
+
+fn split_spaced_equals(
+    raw: &str,
+    line: usize,
+    message: impl FnOnce() -> String,
+) -> Result<(&str, &str)> {
+    raw.split_once(" = ")
+        .ok_or_else(|| err_at(ErrorCode::InvalidSpec, line, message()))
 }
 
 fn parse_range(raw: &str, line: usize) -> Result<RangeExpr> {
@@ -426,6 +441,16 @@ mod tests {
     fn rejects_bad_identifier() {
         let e = parse("share 1tpl = a.md\n  header = 1-end\nend share").unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidName);
+    }
+
+    #[test]
+    fn rejects_unspaced_structural_equals() {
+        let e =
+            parse("arrange main=foo.rs\n  before A = 1-end\n  after A\nend arrange").unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidSpec);
+
+        let e = parse("share tpl = a.md\n  header=1-end\nend share").unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidSpec);
     }
 
     #[test]

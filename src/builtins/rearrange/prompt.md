@@ -9,7 +9,7 @@ share   = read-only named material
 arrange = one target file's complete before -> after transition
 ```
 
-All ranges are 1-based inclusive logical lines. `A-end` means through EOF and is the recommended way to show full-file coverage. Numeric EOF guards such as `21-200` are accepted when they resolve to the actual final line.
+All ranges are 1-based inclusive logical lines. `A-end` means through EOF and is the recommended way to show full-file coverage. Numeric EOF guards such as `21-200` are accepted when they resolve to the actual final line. Structural assignments must use ` = ` with spaces; use a slugged `arrange <slug> = <file>` when a target path contains `=`.
 
 ## Syntax
 
