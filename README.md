@@ -1,7 +1,6 @@
 # Agent Squire
 
 [![Crates.io](https://img.shields.io/crates/v/agent-squire)](https://crates.io/crates/agent-squire)
-[![CI](https://github.com/frostime/agent-squire/workflows/CI/badge.svg)](https://github.com/frostime/agent-squire/actions)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 A cross-platform CLI toolbox that packages common agentic-coding operations into structured, predictable commands.
