@@ -1,4 +1,6 @@
 use std::fs;
+use std::path::Path;
+use std::process::Command as StdCommand;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -8,6 +10,30 @@ use tempfile::tempdir;
 fn output_path(stdout: &[u8]) -> String {
     let text = String::from_utf8(stdout.to_vec()).unwrap();
     text.strip_prefix("output: ").unwrap().trim().to_string()
+}
+
+fn extract_zip(zip_path: &Path) -> tempfile::TempDir {
+    let out = tempdir().unwrap();
+    #[cfg(windows)]
+    let status = StdCommand::new("powershell")
+        .args(["-NoProfile", "-Command", "Expand-Archive"])
+        .arg("-Path")
+        .arg(zip_path)
+        .arg("-DestinationPath")
+        .arg(out.path())
+        .arg("-Force")
+        .status()
+        .unwrap();
+    #[cfg(not(windows))]
+    let status = StdCommand::new("unzip")
+        .arg("-q")
+        .arg(zip_path)
+        .arg("-d")
+        .arg(out.path())
+        .status()
+        .unwrap();
+    assert!(status.success(), "failed to extract {}", zip_path.display());
+    out
 }
 
 #[test]
@@ -257,9 +283,20 @@ fn gather_zip_creates_structured_archive() {
         "stdout: {stdout}"
     );
 
-    // Verify zip exists
     let zip_path = dir.path().join("asq-test-gather-zip-1.zip");
-    assert!(zip_path.exists(), "zip should exist at {}", zip_path.display());
+    assert!(
+        zip_path.exists(),
+        "zip should exist at {}",
+        zip_path.display()
+    );
+
+    let extracted = extract_zip(&zip_path);
+    assert_eq!(
+        fs::read_to_string(extracted.path().join("files/a.txt")).unwrap(),
+        "alpha\n"
+    );
+    let manifest = fs::read_to_string(extracted.path().join("manifest.json")).unwrap();
+    assert!(manifest.contains(r#""inZip": "files/a.txt""#));
 }
 
 #[test]
@@ -275,10 +312,7 @@ fn gather_zip_empty_sources_errors() {
         .success();
 
     let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    assert!(
-        stderr.contains("No sources to package"),
-        "stderr: {stderr}"
-    );
+    assert!(stderr.contains("No sources to package"), "stderr: {stderr}");
 }
 
 #[test]
@@ -293,24 +327,83 @@ fn gather_zip_done_exits_after_packaging() {
         .write_stdin("file:a.txt\n/zip /done\n")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Zip written"));
-
-    // Verify rendered output NOT produced (we exited, didn't gather-render)
-    // The --stdout gather renders when ^D or /done (not /zip /done)
+        .stdout(predicate::str::contains("Zip written"))
+        .stdout(predicate::str::contains("alpha"));
 }
 
 #[test]
 fn gather_zip_includes_ranged_file_artifact() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join("main.rs"), "line1\nline2\nline3\nline4\nline5\n").unwrap();
-    fs::write(dir.path().join("other.txt"), "beta\n").unwrap();
+    fs::write(
+        dir.path().join("main.rs"),
+        "line1\nline2\nline3\nline4\nline5\n",
+    )
+    .unwrap();
 
     Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
         .args(["gather", "--stdout", "-i"])
-        .write_stdin("file:main.rs:2-4\nfile:other.txt\n/zip /done\n")
+        .write_stdin("file:main.rs:2-4\n/zip ranged.zip /done\n")
         .assert()
         .success()
         .stdout(predicate::str::contains("Zip written"));
+
+    let extracted = extract_zip(&dir.path().join("ranged.zip"));
+    let artifact = extracted.path().join("artifacts/file-0-main.rs-L2-4.txt");
+    assert_eq!(fs::read_to_string(artifact).unwrap(), "line2\nline3\nline4");
+}
+
+#[test]
+fn gather_zip_existing_output_errors_without_overwrite() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.txt"), "alpha\n").unwrap();
+    fs::write(dir.path().join("existing.zip"), "keep me").unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "-i"])
+        .write_stdin("file:a.txt\n/zip existing.zip\n/exit\n")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("output file exists"));
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("existing.zip")).unwrap(),
+        "keep me"
+    );
+}
+
+#[test]
+fn gather_zip_no_file_sources_does_not_execute_commands() {
+    let dir = tempdir().unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "-i"])
+        .write_stdin("cmd:echo side > marker\n/zip\n/exit\n")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("No file sources to package"));
+
+    assert!(!dir.path().join("marker").exists());
+}
+
+#[test]
+fn gather_zip_warning_cancel_does_not_execute_commands() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("bin.dat"), [0, 1, 2, 3]).unwrap();
+
+    Command::cargo_bin("squire")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["gather", "--stdout", "-i"])
+        .write_stdin("file:bin.dat\ncmd:echo side > marker\n/zip\nn\n/exit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("binary file(s) detected"));
+
+    assert!(!dir.path().join("marker").exists());
 }
