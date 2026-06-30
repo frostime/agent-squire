@@ -15,6 +15,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   - `share` blocks provide read-only named material from pre-state files.
   - `arrange` blocks declare complete target file transformations with full semantic validation.
   - Dry-run preview by default; `--yes` applies changes after all validation passes.
+- **`gather /zip` command** — package collected sources into a structured zip for AI agent consumption.
+  - Interactive command `/zip [path] [/done]` inside `gather -i` packages current session sources.
+  - Zip layout: `files/` (deduplicated real files), `artifacts/` (cmd output, tree, ranged slices), `manifest.json` (machine-readable index).
+  - Warning confirmation for binary files and files >10 MB before packaging.
+  - Cross-platform zip creation via `powershell Compress-Archive` (Windows) or `zip -r` (Unix).
 
 ## [v0.9.2] — 2026-06-27
 
