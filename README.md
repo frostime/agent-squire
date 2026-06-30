@@ -1,308 +1,451 @@
 # Agent Squire
 
-`agent-squire` is a local CLI toolbox for humans and agents.
+[![Crates.io](https://img.shields.io/crates/v/agent-squire)](https://crates.io/crates/agent-squire)
+[![CI](https://github.com/frostime/agent-squire/workflows/CI/badge.svg)](https://github.com/frostime/agent-squire/actions)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-Install:
+A cross-platform CLI toolbox that packages common agentic-coding operations into structured, predictable commands.
+
+Install it once, use it everywhere: `squire`, `agent-squire`, or `asq`.
+
+## Why Agent Squire?
+
+Agentic coding involves a small set of repetitive operations: orienting within a project, reading precise code ranges, inspecting structured data, assembling multi-source context, and applying changes safely. On different platforms, the same operation often requires different tools with inconsistent interfaces and output formats.
+
+Agent Squire unifies these operations behind a single CLI with:
+
+- **Cross-platform consistency** — same commands, same behavior on Windows, macOS, and Linux
+- **Structured output** — every command supports `--print json` with a stable envelope
+- **Safe mutations** — patch editing and file rearrangement with dry-run, overlap detection, and atomic writes
+
+Humans benefit too: `gather` assembles project context for AI conversations, `img` handles clipboard images, and the uniform interface reduces context switching.
+
+## Install
 
 ```bash
 cargo install agent-squire
 ```
 
-Binaries:
+Binaries: `squire`, `agent-squire`, `asq`
 
-```bash
-squire
-agent-squire
-asq
-```
+## Quick Start
 
-## What it provides
-
-Agent Squire packages small, predictable local tools behind one CLI:
-
-- inspect project files before reading them;
-- extract Markdown structure and references;
-- read exact line ranges;
-- apply SEARCH/REPLACE patch blocks safely;
-- run small agent-oriented utilities with structured output.
-
-## Built-in commands
-
-| Command | Alias | Purpose |
-|---|---|---|
-| `file-tree` | `view-tree` | Show a project directory tree for orientation. |
-| `file-info` | `fileinfo` | Inspect file metadata and text/binary format. |
-| `md-toc` | `mdtoc` | Show Markdown headings with 1-based line numbers. |
-| `data-toc` | `datatoc` | Show JSON/YAML/JSONL structure before reading data. |
-| `md-links` | `mdlinks` | Extract Markdown references and resolve file targets. |
-| `read-range` | `range` | Read known 1-based line ranges from one text file. |
-| `patch-edit` | `patch` | Apply SEARCH/REPLACE patch blocks. |
-| `compose` | — | Render agent context templates into bounded UTF-8 output. |
-| `gather` | — | Assemble files, trees, globs, and command output into one prompt. |
-| `img` | — | Save clipboard images or start the image web UI. |
-| `now` | — | Print the current local date and time. |
-| `list` | — | List built-in commands. |
-
-Discover commands:
-
-```bash
-squire list
-squire <command> --help
-```
-
-## Global options
-
-```bash
-squire --cwd /path/to/project file-tree .
-squire --print json file-info README.md
-squire file-info README.md --print json
-```
-
-`--print` is global and may appear before or after subcommands.
-
-Supported modes:
-
-- `compact`: default human-readable output;
-- `json`: machine-readable JSON envelope;
-- `ndjson`: reserved for streaming commands;
-- `text`: plain body text where applicable;
-- `raw`: passthrough-style output where applicable.
-
-`--json` is a shortcut for `--print json`.
-
-## Common workflows
-
-### Project orientation
+Orient before reading:
 
 ```bash
 squire file-tree . --depth 3
-squire file-info README.md src/cli.rs
-squire md-toc README.md docs
-squire data-toc result.json
+squire md-toc README.md
+squire file-info src/main.rs
 ```
 
-Use this before selecting exact files, line ranges, or structured data samples to read.
-
-### Inspect structured data
+Inspect structured data:
 
 ```bash
 squire data-toc result.json
 squire data-toc logs.jsonl --format jsonl
-squire data-toc compose.yaml --format yaml
-squire data-toc result.json --examples
-squire --print json data-toc result.json
-squire data-toc --prompt
 ```
 
-`data-toc` prints a bounded structure map for JSON, JSONL, and YAML files. It collapses array indexes to `[]`, reports observed field presence, compresses dynamic sibling keys as `{dynamic_key}`, groups JSONL record shapes with representative `first_line` values, and hides raw values by default. YAML support uses external `yq`; `--examples` prints limited truncated/redacted sample values.
-
-### Read exact line ranges
+Read precise ranges:
 
 ```bash
-squire read-range src/cli.rs --range 1-80
-squire range README.md -r start-20 -r 80-120 -r end
+squire read-range src/main.rs --range 1-80
 ```
 
-Range syntax:
-
-| Syntax | Meaning |
-|---|---|
-| `N` | one line |
-| `A-B` | inclusive range |
-| `N~K` | line `N` with `K` lines of context on each side |
-| `start` | first line |
-| `end` | last line |
-
-### Extract Markdown links
+Assemble context for an AI prompt:
 
 ```bash
-squire md-links README.md docs --workspace .
-squire --print json md-links .
+squire gather file:src/main.rs tree:src cmd:"git status --short"
 ```
 
-`md-links` extracts occurrence-level references for graph building.
-
-Supported references:
-
-- Markdown links/images: `[text](target)`, `![alt](target)`;
-- Wiki links: `[[target]]`;
-- inline code path refs: `` `src/main.rs` ``;
-- angle refs: `<https://example.com>`, `<src/main.rs>`;
-- SiYuan refs: `siyuan://...`, `((20260531010806-35bkoxa 'Title'))`.
-
-File targets are resolved against the source file and workspace. Existing files are marked in the output.
-
-Compact output groups by source file:
-
-```text
-# files=1 links=2 file_links=1 existing_file_links=1 missing_file_links=0
-@ README.md links=2 file_links=1 missing_file_links=0
-L12|ok|markdown|file|"docs/intro.md#install"=>"docs/intro.md"
-L18|url|markdown|url|"https://example.com"
-```
-
-JSON output uses the standard envelope and is intended for graph consumers.
-
-### Apply patches safely
-
-`patch-edit` applies LRR-style SEARCH/REPLACE patch blocks.
-
-Dry-run first:
+Apply patches safely:
 
 ```bash
-squire patch-edit @file:fix.patch --dry-run --print json
-```
-
-Apply with explicit confirmation:
-
-```bash
+squire patch-edit @file:fix.patch --dry-run
 squire patch-edit @file:fix.patch --yes
 ```
 
-Interactive mode opens `$EDITOR` / `$VISUAL` when configured, dry-runs first, optionally shows a unified diff, then asks before applying:
+Rearrange file contents with a state-transition DSL:
 
 ```bash
-asq patch -i
+squire rearrange @file:plan.arr --dry-run
+squire rearrange @file:plan.arr --yes
 ```
 
-Without `$EDITOR`, paste into the terminal and submit with a single `.` line.
-
-Patch block capabilities:
-
-- `SEARCH` / `REPLACE` exact matching;
-- `CREATE` and `OVERWRITE`;
-- optional 1-based line ranges;
-- already-applied detection;
-- ambiguous match detection;
-- same-file multi-patch overlap detection;
-- atomic writes with newline-style preservation;
-- UTF-8 / UTF-8 BOM / GBK / Windows-1252 decoding fallback.
-
-### Gather prompt context
-
-`gather` assembles files, directory/glob file groups, directory trees, and command output into a fenced prompt body.
-
-```bash
-asq gather file:src/main.rs cmd:"git status --short"
-asq gather --stdout file:src/main.rs:1-80
-asq gather dir:src glob:"tests/*.rs" tree:src
-asq gather -i
-asq gather --no-gitignore dir:target
-```
-
-Default output is a persistent UTF-8 file under the system temp `agent-temp` directory:
-
-```text
-output: C:\Users\...\Temp\agent-temp\asq-gather-20260613T190000-....md
-```
-
-Source forms:
-
-| Source | Meaning |
-|---|---|
-| `file:path` | Include one file. |
-| `file:path:start-end` | Include an inclusive 1-based line range. |
-| `dir:path` | Recursively expand files into one `DIR` group with nested `DIR-FILE` blocks. |
-| `glob:pattern` | Expand matching files into one `GLOB` group with nested `GLOB-FILE` blocks. |
-| `tree:path` | Include a compact directory structure. |
-| `cmd:command` | Capture command stdout. |
-
-Use `--no-gitignore` when directory expansion or interactive selectors should include files normally hidden by `.gitignore`.
-
-Grouped output uses parent-qualified inner fences (`DIR-FILE-START`, `GLOB-FILE-START`) so expanded files are visually distinct from top-level `FILE` sources.
-
-Interactive mode keeps path selection terminal-native:
-
-```text
-gather> file:   # opens fzf file selection, then edit> file:path allows adding :start-end
-gather> dir:    # opens fzf directory selection, then edit> dir:path
-gather> tree:   # opens fzf directory selection, then edit> tree:path
-gather> /all    # toggle gitignored fzf candidates
-gather> /list   # show selected sources
-gather> /done   # render
-gather> /exit   # quit without rendering
-
-# after fzf selection:
-edit> file:src/main.rs        # press Enter to accept
-edit> file:src/main.rs:10-20  # or edit before accepting
-```
-
-### Work with images
+Save a clipboard image:
 
 ```bash
 squire img
-squire img --web
 ```
 
-`img` saves the current clipboard image as a persistent PNG and prints the local path. Use `img --web` to start the browser UI for arranging uploaded images and generating a structured prompt.
+## Commands
 
-### Compose agent context
+| Command | Alias | Purpose |
+|---|---|---|
+| `file-tree` | `view-tree` | Directory tree for orientation |
+| `file-info` | `fileinfo` | File metadata and format detection |
+| `md-toc` | `mdtoc` | Markdown headings with line numbers |
+| `data-toc` | `datatoc` | JSON/JSONL structure overview |
+| `md-links` | `mdlinks` | Extract Markdown references |
+| `md-backlinks` | `mdbacklinks` | Find backlinks to files |
+| `read-range` | `range` | Read exact line ranges from text files |
+| `patch-edit` | `patch` | Apply SEARCH/REPLACE patches safely |
+| `rearrange` | `rearr` | Rewrite files with a state-transition DSL |
+| `compose` | — | Render agent context templates |
+| `gather` | — | Assemble files, trees, and command output |
+| `img` | — | Save clipboard images or start web UI |
+| `tmp` | `temp` | Create a temporary file or directory |
+| `now` | — | Print current local date and time |
+| `list` | — | List built-in commands |
 
-`compose` renders templates that pull content from stdin, files, environment variables, or guarded shell commands.
+### `file-tree` (`view-tree`)
+
+`file-tree` gives you a compact project map before you open any file — useful for both humans and AI context windows.
 
 ```bash
-asq compose -t context.tpl.md
-asq compose --template '${{file: README.md |> head: 80}}'
-asq compose -t context.tpl.md --stdout
-asq compose -t context.tpl.md --allow-exec
-asq compose --prompt
+squire file-tree . --depth 2
 ```
-
-By default, rendered content is written to a persistent UTF-8 file under the system temp `agent-temp` directory, and stdout reports the path:
 
 ```text
-output: C:\Users\...\Temp\agent-temp\asq-compose-20260610T012244-....md
+./
+├── Cargo.toml
+├── README.md
+└── src/
+    ├── lib.rs
+    ├── cli.rs
+    └── builtins/
+        ├── mod.rs
+        ├── file_tree.rs
+        └── patch_edit/
+            ├── mod.rs
+            └── parser.rs
+
+Files: 40 | Directories: 34 | Total size: 286.4KB
 ```
 
-Use `--stdout` when the rendered body should be piped. JSON status never embeds the rendered body.
+Respects `.gitignore` by default; use `--no-gitignore` to see everything.
 
-Large `exec:` streams are drained while the command runs. The rendered body keeps at most `--max-command-bytes` per stream; excess output is saved under the temp `agent-temp` directory as a spill artifact and referenced from the truncation marker / JSON `artifacts`. `--max-spill-bytes` defaults to `134217728` bytes as a per-run spill budget. Size truncation does not kill `exec:`; timeout does.
+### `file-info` (`fileinfo`)
 
-Template examples:
+Quick metadata check before you feed a file into a text tool.
 
-```md
+```bash
+squire file-info README.md
+```
+
+```text
+README.md | 9.2KB | utf-8 | lf | 389L
+```
+
+One line: filename, size, encoding, line endings, and line count. Catches binary files and encoding mismatches (GBK, Windows-1252) early.
+
+### `md-toc` (`mdtoc`)
+
+Get a navigable skeleton of any Markdown file.
+
+```bash
+squire md-toc README.md
+```
+
+```text
+=== README.md ===
+chars: 9340 | lines: 389
+
+L1     # Agent Squire
+L11      ## Why Agent Squire?
+L23      ## Install
+L31      ## Quick Start
+L80      ## Commands
+L350     ## Development
+```
+
+Jump straight to a heading with `squire read-range README.md --range 31`.
+
+### `data-toc` (`datatoc`)
+
+Peek inside large JSON/YAML/JSONL without loading the whole file.
+
+```bash
+squire data-toc result.json
+```
+
+```text
+# data-toc result.json
+format=json mode=structure-toc complete=true
+
+$ object
+├─ meta object
+│  ├─ timestamp string
+│  └─ version string
+└─ users array<object> observed_items≈1
+   └─ [] object
+      ├─ id number
+      ├─ name string
+      └─ profile object
+         ├─ email string
+         └─ settings object
+            ├─ notifications boolean
+            └─ theme string
+
+Suggested reads:
+- jq '.users[0:5]' result.json
+```
+
+Shows type-tagged structure with array collapse and bounded scanning. Add `--examples` for sample values.
+
+> **External dependency:**
+> YAML support requires [`yq`](https://github.com/mikefarah/yq).
+
+### `md-links` (`mdlinks`)
+
+Extract and verify every reference in your Markdown.
+
+```bash
+squire md-links README.md
+```
+
+```text
+# files=1 links=9 file_links=3 existing_file_links=0 missing_file_links=3
+@ README.md links=9 file_links=3 missing_file_links=3
+L3|url|image|url|"https://img.shields.io/crates/v/agent-squire"
+L3|url|markdown|url|"https://img.shields.io/crates/v/agent-squire"
+L259|missing|code_span|file|"src/main.rs"
+```
+
+Marks existing file targets as `ok` and missing ones as `missing`. Also extracts wiki links, inline code paths, and SiYuan refs.
+
+### `read-range` (`range`)
+
+Grab exactly the lines you need — no scrolling, no guesswork.
+
+```bash
+squire read-range src/cli.rs --range 1-10
+```
+
+```text
+@@ Range Chunk │ src/cli.rs:1-10 (from-args=1-10) @@
+  1 │ use std::ffi::OsString;
+  2 │ use std::path::PathBuf;
+  3 │ use std::process::ExitCode;
+  4 │
+  5 │ use anyhow::{Context, Result, bail};
+  6 │ use clap::{Args, CommandFactory, Parser, Subcommand};
+  7 │
+  8 │ use crate::builtins;
+  9 │ use crate::external;
+ 10 │ use crate::runtime::output::PrintMode;
+```
+
+Supports `N`, `A-B`, `N~K` (context on both sides), `start`, and `end`. Perfect when an AI says "look at line 50" and you want surrounding context.
+
+### `patch-edit` (`patch`)
+
+`patch-edit` is a cross-platform, validation-first file editing tool. It takes a SEARCH/REPLACE patch block, dry-runs it, checks for conflicts, and applies atomically — no shell required.
+
+**Use it when:**
+- You're in a restricted container where no `edit` tool is available
+- You need a general-purpose editing primitive that works outside any specific harness
+- You want dry-run validation, overlap detection, and already-applied detection before touching any file
+
+Supports `@stdin`, `@file:path`, and literal input:
+
+```bash
+cat fix.patch | squire patch-edit @stdin --dry-run
+squire patch-edit @file:fix.patch --yes
+```
+
+Patch block example:
+
+```text
+# src/utils.rs L10-L15
+<<<<<<< SEARCH
+fn old_helper(x: i32) -> i32 {
+    x + 1
+}
+=======
+fn new_helper(x: i32) -> i32 {
+    x.saturating_add(1)
+}
+>>>>>>> REPLACE
+```
+
+```bash
+squire patch-edit @file:fix.patch --dry-run
+squire patch-edit @file:fix.patch --yes
+```
+
+Dry-run previews every change. Detects overlap, already-applied patches, and ambiguous matches. Also supports `CREATE` (new files) and `OVERWRITE` (full replacement).
+
+Need the full patch DSL spec? `squire patch-edit --prompt` prints it.
+
+### `rearrange` (`rearr`)
+
+When an AI refactors a large file, it often rewrites the entire content — burning tokens and risking subtle drift. `rearrange` lets you describe the change as a precise state-transition: "take lines 1-60 (the API), lines 61-140 (the parser), and lines 141-end (the rest), then reorder them as API, rest, parser." The tool validates the pre-state, previews the outcome, and writes atomically.
+
+**Why this matters:** instead of dumping a 200-line file into the context window and asking the model to "reorder these functions", you describe the operation in ~10 lines of DSL. Same result, far fewer tokens, zero hallucination risk.
+
+Single-file reorder:
+
+```text
+arrange src/main.rs
+  before api = 1-60, parser = 61-140, rest = 141-end
+  after  api, rest, parser
+end arrange
+```
+
+Cross-file extraction — move `parser` out of `src/main.rs` into a new `src/parser.rs`:
+
+```text
+arrange main = src/main.rs
+  before api = 1-60, parser = 61-140, rest = 141-end
+  after  api, rest
+end arrange
+
+arrange src/parser.rs
+  before <missing>
+  after  main::parser
+end arrange
+```
+
+```bash
+squire rearrange @file:plan.arr --dry-run
+squire rearrange @file:plan.arr --yes
+```
+
+Validates the pre-state snapshot before touching anything. If the file changed since the snapshot was taken, the operation aborts — no half-finished edits.
+
+Need the full DSL spec? `squire rearrange --prompt` prints it.
+
+### `compose`
+
+Fill a template with live project state — git status, file excerpts, command output — and get a bounded prompt file.
+
+Template (`context.tpl.md`):
+
+```markdown
 ## Request
 
 ${{stdin |> trim}}
 
 ## README
 
-${{
-  file: README.md
-  |> lines: 1-END
-  |> indent: 2
-}}
+${{file: README.md |> lines: 1-40}}
 
-## Git
+## Git Status
 
-${{exec: git status --short |> timeout: 5 |> stdout |> max-lines: 100 |> on-error: "git unavailable"}}
+${{exec: git status --short |> timeout: 5}}
 ```
-
-Command roles are normalized: source first, runtime controls and stream selectors before text transforms, and failure policies as recovery rules. Text transforms run left-to-right. No-argument commands may omit `:`; body-taking commands use `name: body`.
-
-`--total-timeout` is the total render-phase wall-clock budget across all `${{...}}` interpolations. For `exec:`, the effective command timeout is the smaller of the local `timeout:` / global `--timeout` and the remaining total render budget.
-
-## Input sources
-
-Commands that accept text input support:
-
-```text
-@stdin        read from stdin
-@file:path    read from a file
-@env:NAME     read from an environment variable
-@@file:path   pass literal "@file:path"
-```
-
-Examples:
 
 ```bash
-cat fix.patch | squire patch-edit @stdin --dry-run
-squire patch-edit @file:fix.patch --dry-run --print json
+squire compose -t context.tpl.md
 ```
 
-## Output contract
+Renders `${{...}}` interpolations into a temp file. Built-in truncation and spill files prevent accidental multi-megabyte output.
 
-JSON mode uses a stable envelope shape:
+Need the full template syntax guide? `squire compose --prompt` prints it.
+
+### `gather`
+
+Assemble everything an AI needs to know about your project into one copy-pasteable prompt.
+
+```bash
+squire gather file:src/main.rs tree:src cmd:"git status --short"
+```
+
+Produces a single Markdown file with grouped, fenced blocks:
+
+```markdown
+--- FILE: src/main.rs ---
+fn main() { ... }
+
+--- TREE: src ---
+src/
+├── main.rs
+└── lib.rs
+
+--- CMD: git status --short ---
+M src/main.rs
+?? notes.md
+```
+
+One command, one file, ready to paste into any AI chat.
+
+> **External dependency:** Interactive mode (`-i`) requires [`fzf`](https://github.com/junegunn/fzf).
+
+Need the source syntax guide? `squire gather --prompt` prints it.
+
+### `img`
+
+Screenshot an error dialog, run `img`, and get a persistent PNG path you can reference in your next AI prompt.
+
+```bash
+squire img
+# output: /tmp/agent-temp/asq-img-20260630T143052-abc123.png
+```
+
+Use `img --web` to start a browser UI for arranging multiple images and generating a structured prompt.
+
+### `now`
+
+Portable timestamp — no more `date` syntax archaeology across macOS and Linux.
+
+```bash
+squire now
+# 2026-06-30 17:58:30 (+08:00)
+```
+
+Handy for timestamped filenames and log entries in scripts.
+
+### `md-backlinks` (`mdbacklinks`)
+
+Find which Markdown files link to a given file.
+
+```bash
+squire md-backlinks src/lib.rs
+```
+
+Scans the corpus for references to the target file. Useful when refactoring: rename a file and see every doc that needs updating.
+
+### `tmp` (`temp`)
+
+Create a scratch file or directory outside the current workspace.
+
+```bash
+squire tmp scratch.md
+# /tmp/agent-temp/20260630T175830-scratch.md
+```
+
+Adds a timestamp prefix to avoid collisions. Useful when an agent or script needs transient storage.
+
+### `list`
+
+```bash
+squire list
+```
+
+Prints every built-in command with its alias. Use `<command> --prompt` for the full DSL guide (patch-edit, rearrange, compose, gather).
+
+Discover more:
+
+```bash
+squire <command> --help
+squire <command> --prompt
+```
+
+## Global Options
+
+```bash
+squire --cwd /path/to/project file-tree .
+squire --print json file-info README.md
+squire file-info README.md --json
+```
+
+`--print` supports `compact` (default), `json`, `ndjson`, `text`, and `raw`. It may appear before or after subcommands.
+
+Commands that accept text input support `@stdin`, `@file:path`, and `@env:NAME`.
+
+## Output Contract
+
+JSON mode uses a stable envelope:
 
 ```json
 {
@@ -314,29 +457,16 @@ JSON mode uses a stable envelope shape:
 }
 ```
 
-Prefer JSON mode when another tool or agent consumes the output.
+## Design
 
-## Design constraints
-
-- Flat built-in commands first; avoid premature namespace splits.
-- No thin wrappers for trivial shell commands.
-- Built-ins live under `src/builtins/` as vertical command modules.
-- CLI parsing is handled by `clap`.
-- Agent-facing help and structured output are first-class.
-- Existing command names and aliases should remain backwards compatible.
+- Flat built-in commands first; no premature namespaces
+- No thin wrappers for trivial shell commands
+- Agent-facing help and structured output are first-class
+- Existing command names and aliases remain backwards compatible
 
 ## Development
 
 ```bash
-cargo test
-cargo clippy --all-targets --all-features -- -D warnings
-cargo fmt
-```
-
-Release checklist:
-
-```bash
-cargo check
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt
