@@ -30,7 +30,10 @@ pub fn expand_dir(cwd: &Path, path: &Path, respect_gitignore: bool) -> Result<Ve
 
     let mut files = Vec::new();
     for entry in walker.build() {
-        let entry = entry.with_context(|| format!("failed to walk {}", root.display()))?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         if entry
             .file_type()
             .is_some_and(|file_type| file_type.is_file())
@@ -52,7 +55,10 @@ pub fn expand_glob(cwd: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
 
     let mut files = Vec::new();
     for entry in glob(&effective).with_context(|| format!("invalid glob pattern: {pattern}"))? {
-        let path = entry?;
+        let path = match entry {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
         if path.is_file() {
             files.push(normalize_path(relative_to(cwd, &path)));
         }
@@ -102,7 +108,10 @@ pub fn fzf_dirs(cwd: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
 
     let mut dirs = Vec::new();
     for entry in walker.build() {
-        let entry = entry.with_context(|| format!("failed to walk {}", cwd.display()))?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         if entry.path() == cwd {
             continue;
         }

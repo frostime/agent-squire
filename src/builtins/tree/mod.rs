@@ -214,7 +214,10 @@ fn build_tree(root: &Path, args: &TreeArgs) -> Result<TreeNode> {
     let canon_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
 
     for entry in walker.build() {
-        let entry = entry.with_context(|| "failed to walk directory")?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         let path = entry.path().to_path_buf();
         let canon = path.canonicalize().unwrap_or_else(|_| path.clone());
 

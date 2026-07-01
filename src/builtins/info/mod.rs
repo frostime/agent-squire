@@ -121,7 +121,10 @@ fn resolve_sources(
         if has_glob_magic(&source) {
             let mut any = false;
             for entry in glob(&source).with_context(|| format!("invalid glob pattern: {source}"))? {
-                let path = entry?;
+                let path = match entry {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
                 if path.exists() {
                     any = true;
                     add_existing(&mut ordered, &path, max_files)?;

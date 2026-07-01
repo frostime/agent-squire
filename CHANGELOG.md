@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.10.1] — 2026-07-01
+
+### Fixed
+
+- Directory walkers in `file-tree`, `gather`, `md-backlinks`, `file-info`, and glob expansion no longer crash on permission-denied or other non-fatal IO errors during traversal; affected entries are now skipped.
+
 ## [v0.10.0] — 2026-06-30
 
 ### Added

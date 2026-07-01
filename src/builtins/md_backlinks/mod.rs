@@ -221,7 +221,10 @@ fn walk_markdown_dir(root: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf
 
     let mut files = Vec::new();
     for entry in walker.build() {
-        let entry = entry.with_context(|| "failed to walk backlink corpus")?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         let path = entry.path();
         if path.is_file() && is_markdown_file(path) {
             files.push(path.to_path_buf());
