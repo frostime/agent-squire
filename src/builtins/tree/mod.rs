@@ -61,10 +61,23 @@ asq file-tree . -d 3 -o tree.md
 - JSON mode (`--print json`) returns structured data with stats.
 "#;
 
+const LONG_ABOUT: &str = "Display a compact project directory tree for orientation before reading files.
+
+Use this when an agent needs to understand repository layout, choose likely files, or inspect a subdirectory without dumping file contents. By default it respects nested .gitignore files and hides common noise such as .git, node_modules, __pycache__, and cache directories.
+
+Use `--depth` to keep context small, `--dirs-only` for high-level structure, and `--detail` only when line/character counts are useful for deciding what to read next.";
+
+const AFTER_HELP: &str = "Examples:
+    asq file-tree . -d 2
+    asq file-tree src tests --dirs-only
+    asq file-tree . --show-size
+    asq file-tree docs --detail
+    asq --print json file-tree src -d 3";
+
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Display a compact project directory tree for orientation before reading files.\n\nUse this when an agent needs to understand repository layout, choose likely files, or inspect a subdirectory without dumping file contents. By default it respects nested .gitignore files and hides common noise such as .git, node_modules, __pycache__, and cache directories.\n\nUse `--depth` to keep context small, `--dirs-only` for high-level structure, and `--detail` only when line/character counts are useful for deciding what to read next.",
-    after_help = "Examples:\n  squire file-tree . -d 2\n  squire file-tree src tests --dirs-only\n  squire file-tree . --show-size\n  squire file-tree docs --detail\n  squire --print json file-tree src -d 3"
+    long_about = LONG_ABOUT,
+    after_help = AFTER_HELP
 )]
 pub struct TreeArgs {
     #[arg(default_value = ".", help = "Directories to display")]

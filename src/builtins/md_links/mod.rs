@@ -14,8 +14,13 @@ use self::model::{MdLinksData, MdLinksFile, TargetType};
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Extract Markdown link-like references and resolve file targets against the effective current working directory.\n\nInputs may be Markdown files, directories, or glob patterns. Directories are searched recursively for .md files. JSON output is graph-ready; compact output groups dense records by source file.",
-    after_help = "Examples:\n  squire md-links README.md\n  squire --cwd . md-links docs\n  squire --print json md-links .sspec"
+    long_about = r#"Extract Markdown link-like references and resolve file targets against the effective current working directory.
+
+Inputs may be Markdown files, directories, or glob patterns. Directories are searched recursively for .md files. JSON output is graph-ready; compact output groups dense records by source file."#,
+    after_help = r#"Examples:
+    asq md-links README.md
+    asq --cwd . md-links docs
+    asq --print json md-links docs/"#
 )]
 pub struct MdLinksArgs {
     #[arg(

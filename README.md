@@ -11,7 +11,7 @@ Install it once, use it everywhere: `squire`, `agent-squire`, or `asq`.
 
 Agentic coding involves a small set of repetitive operations: orienting within a project, reading precise code ranges, inspecting structured data, assembling multi-source context, and applying changes safely. On different platforms, the same operation often requires different tools with inconsistent interfaces and output formats.
 
-Agent Squire unifies these operations behind a single CLI with:
+Agent asq unifies these operations behind a single CLI with:
 
 - **Cross-platform consistency** — same commands, same behavior on Windows, macOS, and Linux
 - **Structured output** — every command supports `--print json` with a stable envelope
@@ -25,55 +25,55 @@ Humans benefit too: `gather` assembles project context for AI conversations, `im
 cargo install agent-squire
 ```
 
-Binaries: `squire`, `agent-squire`, `asq`
+Binaries: `asq`, `squire`, `agent-squire`.
 
 ## Quick Start
 
 Orient before reading:
 
 ```bash
-squire file-tree . --depth 3
-squire md-toc README.md
-squire file-info src/main.rs
+asq file-tree . --depth 3
+asq md-toc README.md
+asq file-info src/main.rs
 ```
 
 Inspect structured data:
 
 ```bash
-squire data-toc result.json
-squire data-toc logs.jsonl --format jsonl
+asq data-toc result.json
+asq data-toc logs.jsonl --format jsonl
 ```
 
 Read precise ranges:
 
 ```bash
-squire read-range src/main.rs --range 1-80
+asq read-range src/main.rs --range 1-80
 ```
 
 Assemble context for an AI prompt:
 
 ```bash
-squire gather file:src/main.rs tree:src cmd:"git status --short"
+asq gather file:src/main.rs tree:src cmd:"git status --short"
 ```
 
 Apply patches safely:
 
 ```bash
-squire patch-edit @file:fix.patch --dry-run
-squire patch-edit @file:fix.patch --yes
+asq patch-edit @file:fix.patch --dry-run
+asq patch-edit @file:fix.patch --yes
 ```
 
 Rearrange file contents with a state-transition DSL:
 
 ```bash
-squire rearrange @file:plan.arr --dry-run
-squire rearrange @file:plan.arr --yes
+asq rearrange @file:plan.arr --dry-run
+asq rearrange @file:plan.arr --yes
 ```
 
 Save a clipboard image:
 
 ```bash
-squire img
+asq img
 ```
 
 ## Commands
@@ -101,7 +101,7 @@ squire img
 `file-tree` gives you a compact project map before you open any file — useful for both humans and AI context windows.
 
 ```bash
-squire file-tree . --depth 2
+asq file-tree . --depth 2
 ```
 
 ```text
@@ -128,7 +128,7 @@ Respects `.gitignore` by default; use `--no-gitignore` to see everything.
 Quick metadata check before you feed a file into a text tool.
 
 ```bash
-squire file-info README.md
+asq file-info README.md
 ```
 
 ```text
@@ -142,7 +142,7 @@ One line: filename, size, encoding, line endings, and line count. Catches binary
 Get a navigable skeleton of any Markdown file.
 
 ```bash
-squire md-toc README.md
+asq md-toc README.md
 ```
 
 ```text
@@ -157,14 +157,14 @@ L80      ## Commands
 L350     ## Development
 ```
 
-Jump straight to a heading with `squire read-range README.md --range 31`.
+Jump straight to a heading with `asq read-range README.md --range 31`.
 
 ### `data-toc` (`datatoc`)
 
 Peek inside large JSON/YAML/JSONL without loading the whole file.
 
 ```bash
-squire data-toc result.json
+asq data-toc result.json
 ```
 
 ```text
@@ -199,7 +199,7 @@ Shows type-tagged structure with array collapse and bounded scanning. Add `--exa
 Extract and verify every reference in your Markdown.
 
 ```bash
-squire md-links README.md
+asq md-links README.md
 ```
 
 ```text
@@ -217,7 +217,7 @@ Marks existing file targets as `ok` and missing ones as `missing`. Also extracts
 Grab exactly the lines you need — no scrolling, no guesswork.
 
 ```bash
-squire read-range src/cli.rs --range 1-10
+asq read-range src/cli.rs --range 1-10
 ```
 
 ```text
@@ -248,8 +248,8 @@ Supports `N`, `A-B`, `N~K` (context on both sides), `start`, and `end`. Perfect 
 Supports `@stdin`, `@file:path`, and literal input:
 
 ```bash
-cat fix.patch | squire patch-edit @stdin --dry-run
-squire patch-edit @file:fix.patch --yes
+cat fix.patch | asq patch-edit @stdin --dry-run
+asq patch-edit @file:fix.patch --yes
 ```
 
 Patch block example:
@@ -268,13 +268,13 @@ fn new_helper(x: i32) -> i32 {
 ```
 
 ```bash
-squire patch-edit @file:fix.patch --dry-run
-squire patch-edit @file:fix.patch --yes
+asq patch-edit @file:fix.patch --dry-run
+asq patch-edit @file:fix.patch --yes
 ```
 
 Dry-run previews every change. Detects overlap, already-applied patches, and ambiguous matches. Also supports `CREATE` (new files) and `OVERWRITE` (full replacement).
 
-Need the full patch DSL spec? `squire patch-edit --prompt` prints it.
+Need the full patch DSL spec? `asq patch-edit --prompt` prints it.
 
 ### `rearrange` (`rearr`)
 
@@ -306,13 +306,13 @@ end arrange
 ```
 
 ```bash
-squire rearrange @file:plan.arr --dry-run
-squire rearrange @file:plan.arr --yes
+asq rearrange @file:plan.arr --dry-run
+asq rearrange @file:plan.arr --yes
 ```
 
 Validates the pre-state snapshot before touching anything. If the file changed since the snapshot was taken, the operation aborts — no half-finished edits.
 
-Need the full DSL spec? `squire rearrange --prompt` prints it.
+Need the full DSL spec? `asq rearrange --prompt` prints it.
 
 ### `compose`
 
@@ -335,19 +335,19 @@ ${{exec: git status --short |> timeout: 5}}
 ```
 
 ```bash
-squire compose -t context.tpl.md
+asq compose -t context.tpl.md
 ```
 
 Renders `${{...}}` interpolations into a temp file. Built-in truncation and spill files prevent accidental multi-megabyte output.
 
-Need the full template syntax guide? `squire compose --prompt` prints it.
+Need the full template syntax guide? `asq compose --prompt` prints it.
 
 ### `gather`
 
 Assemble everything an AI needs to know about your project into one copy-pasteable prompt.
 
 ```bash
-squire gather file:src/main.rs tree:src cmd:"git status --short"
+asq gather file:src/main.rs tree:src cmd:"git status --short"
 ```
 
 Produces a single Markdown file with grouped, fenced blocks:
@@ -370,14 +370,14 @@ One command, one file, ready to paste into any AI chat.
 
 > **External dependency:** Interactive mode (`-i`) requires [`fzf`](https://github.com/junegunn/fzf).
 
-Need the source syntax guide? `squire gather --prompt` prints it.
+Need the source syntax guide? `asq gather --prompt` prints it.
 
 ### `img`
 
 Screenshot an error dialog, run `img`, and get a persistent PNG path you can reference in your next AI prompt.
 
 ```bash
-squire img
+asq img
 # output: /tmp/agent-temp/asq-img-20260630T143052-abc123.png
 ```
 
@@ -388,7 +388,7 @@ Use `img --web` to start a browser UI for arranging multiple images and generati
 Portable timestamp — no more `date` syntax archaeology across macOS and Linux.
 
 ```bash
-squire now
+asq now
 # 2026-06-30 17:58:30 (+08:00)
 ```
 
@@ -399,7 +399,7 @@ Handy for timestamped filenames and log entries in scripts.
 Find which Markdown files link to a given file.
 
 ```bash
-squire md-backlinks src/lib.rs
+asq md-backlinks src/lib.rs
 ```
 
 Scans the corpus for references to the target file. Useful when refactoring: rename a file and see every doc that needs updating.
@@ -409,7 +409,7 @@ Scans the corpus for references to the target file. Useful when refactoring: ren
 Create a scratch file or directory outside the current workspace.
 
 ```bash
-squire tmp scratch.md
+asq tmp scratch.md
 # /tmp/agent-temp/20260630T175830-scratch.md
 ```
 
@@ -418,7 +418,7 @@ Adds a timestamp prefix to avoid collisions. Useful when an agent or script need
 ### `list`
 
 ```bash
-squire list
+asq list
 ```
 
 Prints every built-in command with its alias. Use `<command> --prompt` for the full DSL guide (patch-edit, rearrange, compose, gather).
@@ -426,16 +426,16 @@ Prints every built-in command with its alias. Use `<command> --prompt` for the f
 Discover more:
 
 ```bash
-squire <command> --help
-squire <command> --prompt
+asq <command> --help
+asq <command> --prompt
 ```
 
 ## Global Options
 
 ```bash
-squire --cwd /path/to/project file-tree .
-squire --print json file-info README.md
-squire file-info README.md --json
+asq --cwd /path/to/project file-tree .
+asq --print json file-info README.md
+asq file-info README.md --json
 ```
 
 `--print` supports `compact` (default), `json`, `ndjson`, `text`, and `raw`. It may appear before or after subcommands.

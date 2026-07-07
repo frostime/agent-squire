@@ -13,8 +13,16 @@ use serde_json::Value;
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Pre-scan JSON, JSONL, and YAML files and print an agent-facing structural table of contents.\n\nUse this before reading raw structured data into context. The output is a bounded structure map, not a JSON Schema, validator, or query language. YAML support uses external yq and is approximate. Values are hidden by default.",
-    after_help = "Examples:\n  squire data-toc result.json\n  squire data-toc logs.jsonl --format jsonl\n  squire data-toc compose.yaml --format yaml\n  squire data-toc result.json --budget large\n  squire --print json data-toc result.json\n  squire data-toc --prompt"
+    long_about = "Pre-scan JSON, JSONL, and YAML files and print an agent-facing structural table of contents.
+
+Use this before reading raw structured data into context. The output is a bounded structure map, not a JSON Schema, validator, or query language. YAML support uses external yq and is approximate. Values are hidden by default.",
+    after_help = "Examples:
+    asq data-toc result.json
+    asq data-toc logs.jsonl --format jsonl
+    asq data-toc compose.yaml --format yaml
+    asq data-toc result.json --budget large
+    asq --print json data-toc result.json
+    asq data-toc --prompt"
 )]
 pub struct DataTocArgs {
     #[arg(help = "JSON, JSONL, or YAML file to inspect; not required with --prompt")]

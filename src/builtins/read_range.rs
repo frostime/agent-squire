@@ -82,14 +82,14 @@ Without --range/--head/--tail, the entire file is printed."#;
 #[command(
     long_about = LONG_ABOUT,
     after_help = r#"Examples:
-  squire range src/cli.rs -r 10
-  squire range src/cli.rs -r 10-30
-  squire range src/cli.rs -r 120~20
-  squire range src/cli.rs -r start-80 -r 120-end
-  squire range src/cli.rs --head 20
-  squire range src/cli.rs --tail 30
-  squire range src/cli.rs                 # entire file
-  squire --print json range src/cli.rs -r 10-30"#)]
+    asq read-range src/cli.rs -r 10
+    asq read-range src/cli.rs -r 10-30
+    asq read-range src/cli.rs -r 120~20
+    asq read-range src/cli.rs -r start-80 -r 120-end
+    asq read-range src/cli.rs --head 20
+    asq read-range src/cli.rs --tail 30
+    asq read-range src/cli.rs                 # entire file
+    asq --print json read-range src/cli.rs -r 10-30"#)]
 pub struct ReadRangeArgs {
     #[arg(help = "Text file to read")]
     pub file: Option<PathBuf>,

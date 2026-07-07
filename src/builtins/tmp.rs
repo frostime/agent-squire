@@ -11,8 +11,15 @@ use crate::runtime::output::{self, Envelope, PrintMode};
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Create a temporary file or directory under a temp root.\n\nUseful when an agent or script needs a quick scratch file or directory that lives outside the current workspace. By default a timestamp prefix is added to the name to avoid collisions.",
-    after_help = "Examples:\n  squire tmp note\n  squire tmp --dir logs\n  squire tmp --open scratch.py\n  squire tmp --no-time-prefix todo.md\n  squire tmp --dir"
+    long_about = "Create a temporary file or directory under a temp root.
+
+Useful when an agent or script needs a quick scratch file or directory that lives outside the current workspace. By default a timestamp prefix is added to the name to avoid collisions.",
+    after_help = "Examples:
+    asq tmp note
+    asq tmp --dir logs
+    asq tmp --open scratch.py
+    asq tmp --no-time-prefix todo.md
+    asq tmp --dir"
 )]
 pub struct TmpArgs {
     #[arg(

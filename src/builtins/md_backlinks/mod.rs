@@ -16,8 +16,13 @@ use crate::runtime::output::{self, Envelope, PrintMode};
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Find Markdown files that link to one or more target files.\n\nPositional pages are the focus pages whose incoming links should be reported. Corpus files are selected with --from and default to the effective current working directory. Directory corpus walks respect .gitignore and built-in skip rules by default.",
-    after_help = "Examples:\n  squire md-backlinks notes/foo.md\n  squire md-backlinks notes/foo.md --from docs --from README.md\n  squire --print json md-backlinks notes/foo.md --from ."
+    long_about = r#"Find Markdown files that link to one or more target files.
+
+Positional pages are the focus pages whose incoming links should be reported. Corpus files are selected with --from and default to the effective current working directory. Directory corpus walks respect .gitignore and built-in skip rules by default."#,
+    after_help = r#"Examples:
+    asq md-backlinks notes/foo.md
+    asq md-backlinks notes/foo.md --from docs --from README.md
+    asq --print json md-backlinks notes/foo.md --from ."#
 )]
 pub struct MdBacklinksArgs {
     #[arg(

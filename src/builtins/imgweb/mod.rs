@@ -23,8 +23,12 @@ pub const MAX_UPLOAD_MB: usize = 25;
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Start a local web UI for composing multi-image prompts.\n\nThe server binds to 127.0.0.1, stores uploaded images in a temporary session directory, and keeps files after exit so generated file:// prompt references remain usable.",
-    after_help = "Examples:\n  squire imgweb\n  squire imgweb --no-open"
+    long_about = "Start a local web UI for composing multi-image prompts.
+
+The server binds to 127.0.0.1, stores uploaded images in a temporary session directory, and keeps files after exit so generated file:// prompt references remain usable.",
+    after_help = "Examples:
+    asq imgweb
+    asq imgweb --no-open"
 )]
 pub struct ImgWebArgs {
     #[arg(long, help = "Do not open the browser automatically")]

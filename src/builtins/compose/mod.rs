@@ -1,4 +1,5 @@
 pub(crate) mod compile;
+pub(crate) mod help_doc;
 pub(crate) mod model;
 mod modifiers;
 pub(crate) mod output;
@@ -17,6 +18,7 @@ use crate::cli::CommandContext;
 use crate::runtime::output::{self as runtime_output, Envelope, PrintMode};
 
 use compile::compile_template;
+use help_doc::COMPOSE_PROMPT;
 use model::{ComposeError, ComposeStatus, FailureCase, RenderOptions, ShellMode, SourceInfo};
 use output::{
     ComposeMeta, print_check_ok, print_error, print_success, resolve_target, write_rendered,
@@ -30,118 +32,24 @@ const DEFAULT_MAX_FILE_BYTES: usize = 1_048_576;
 const DEFAULT_MAX_COMMAND_BYTES: usize = 1_048_576;
 const DEFAULT_MAX_SPILL_BYTES: usize = 134_217_728;
 
-const COMPOSE_PROMPT: &str = r#"# Squire compose template guide
+const LONG_ABOUT: &str = "Render deterministic agent context templates. By default, rendered content is written to a persistent file under the system temp agent-temp directory; use --stdout for pipeline mode. Use --prompt for the agent-facing template guide.";
 
-`asq compose` renders agent context templates into bounded UTF-8 output files.
-Prefer `--template-file` for non-trivial templates; use `--template` only for tiny one-liners because shell quoting differs across platforms.
+const AFTER_HELP: &str = "Workflow:
+    asq compose -t context.tpl.md --check
+    asq compose -t context.tpl.md --list-sources
+    asq compose -t context.tpl.md
 
-## Workflow
-
-```bash
-asq compose -t context.tpl.md --check
-asq compose -t context.tpl.md --list-sources
-asq compose -t context.tpl.md
-```
-
-Default output is a persistent file under the system temp `agent-temp` directory, and compact stdout reports its path:
-
-```text
-output: C:\Users\...\Temp\agent-temp\asq-compose-<timestamp>-<uuid>.md
-```
-
-Read that file for the rendered body. Use `--stdout` only when the body should be piped to another command.
-In JSON mode, status output reports `data.output.path` and does not embed the rendered body.
-
-## Source Decision Table
-
-| Need | Template |
-|---|---|
-| Current piped/user text | `${{stdin |> trim}}` |
-| Whole file or file slice | `${{file: README.md |> lines: 1-80}}` |
-| Environment variable | `${{env: NAME |> fallback: ""}}` |
-| Command stdout | `${{exec: git status --short |> timeout: 5 |> stdout}}` |
-| Command stderr | `${{exec: cargo test |> timeout: 120 |> stderr}}` |
-| Recover missing/failed source | `${{file: optional.md |> on-404: ""}}` |
-
-## Syntax
-
-```md
-${{source |> stage |> stage}}
-```
-
-Source commands appear first: `stdin`, `file: path`, `env: NAME`, `exec: command`.
-No-argument commands may omit the colon: `stdin`, `trim`, `stdout`, `stderr`.
-Commands with bodies use `name: body`.
-
-Stage command roles:
-
-- runtime: `timeout: 5`
-- stream: `stdout`, `stderr` (`exec` only)
-- transform: `lines: 1-END`, `head: 80`, `tail: 40`, `trim`, `indent: 2`, `max-bytes: 4096`
-- policy: `fallback: ""`, `on-404: "missing"`, `on-error: "failed"`, `on-timeout: "timed out"`
-
-Text transforms run left-to-right. Runtime controls, stream selectors, and failure policies are normalized by role.
-
-## Recipes
-
-Include a bounded README excerpt:
-
-```md
-## README
-
-${{
-  file: README.md
-  |> lines: 1-120
-  |> indent: 2
-}}
-```
-
-Include stdin and trim surrounding whitespace:
-
-```md
-## Request
-
-${{stdin |> trim}}
-```
-
-Include command output safely:
-
-```md
-## Git Status
-
-${{exec: git status --short |> timeout: 5 |> stdout |> max-lines: 100 |> on-error: "git status unavailable"}}
-```
-
-Use a literal multiline fallback with JSON string escapes:
-
-```md
-${{file: missing.md |> fallback: "line1\nline2"}}
-```
-
-## Safety And Limits
-
-`exec:` is disabled unless `--allow-exec` is passed. `stdin` fails when stdin is an interactive terminal, preventing accidental hangs.
-
-`--total-timeout` is the whole render-phase wall-clock budget.
-A local `timeout:` stage limits one `exec`; the effective exec timeout is the smaller of local timeout and remaining total timeout.
-
-Large `exec:` stdout/stderr streams are drained while the child runs.
-Rendered text keeps the first `--max-command-bytes` per stream; excess bytes spill to temp files under the per-render `--max-spill-bytes` budget.
-Size truncation does not kill `exec`; timeout does.
-
-## Debugging
-
-- Use `--check` to catch syntax and static modifier errors without reading files or running commands.
-- Use `--list-sources` to inspect discovered sources without resolving them.
-- If output contains `[asq compose: ... saved to PATH]`, read `PATH` for the spilled full stream.
-- In JSON mode, inspect `data.artifacts` on success and `error.artifacts` on failure.
-- Use `--fail-on-truncated` when truncation should fail the run but spill artifacts should still be preserved.
-"#;
+Examples:
+    asq compose -t context.tpl.md
+    asq compose --template '${{file: README.md |> head: 80}}'
+    asq compose -t context.tpl.md --stdout
+    asq compose -t context.tpl.md --allow-exec
+";
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Render deterministic agent context templates. By default, rendered content is written to a persistent file under the system temp agent-temp directory; use --stdout for pipeline mode. Use --prompt for the agent-facing template guide.",
-    after_help = "Workflow:\n  asq compose -t context.tpl.md --check\n  asq compose -t context.tpl.md --list-sources\n  asq compose -t context.tpl.md\n\nExamples:\n  asq compose -t context.tpl.md\n  asq compose --template '${{file: README.md |> head: 80}}'\n  asq compose -t context.tpl.md --stdout\n  asq compose -t context.tpl.md --allow-exec"
+    long_about = LONG_ABOUT,
+    after_help = AFTER_HELP
 )]
 pub struct ComposeArgs {
     #[arg(
