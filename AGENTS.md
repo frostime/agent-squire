@@ -2,7 +2,7 @@
 
 This project develop an CLI, see `project.md` file.
 
-CLI: `agent-squir`, with alias `squire` and `asq`.
+CLI: `agent-squir`, with alias `squire` and `asq`. Use `asq` as the main CLI entrypoint.
 
 This codebase is agent-squire itself. Changes MUST maintain backwards compatibility for existing CLI commands and flags.
 
@@ -17,6 +17,11 @@ cargo fmt
 [alias]
 s = "run --bin squire --"
 ```
+
+For CLI help doc string, use Rust multiline instead of `\n`.
+If the document string is very long, it's ok to declare them into a separate file.
+
+For complex CLI, design `--prompt` as bulit-in user-guide.
 
 <!-- SSPEC:START -->
 # sspec Router

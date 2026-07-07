@@ -15,8 +15,14 @@ use crate::runtime::output::{self, Envelope, PrintMode};
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Save clipboard images or start the image web UI.\n\nBy default, img reads the current system clipboard image, saves it as a persistent PNG under the system temp agent-temp directory, and prints the saved path.",
-    after_help = "Examples:\n  squire img\n  squire img --clipboard\n  squire img --web\n  squire img --web --no-open"
+    long_about = "Save clipboard images or start the image web UI.
+
+By default, img reads the current system clipboard image, saves it as a persistent PNG under the system temp agent-temp directory, and prints the saved path.",
+    after_help = "Examples:
+    asq img
+    asq img --clipboard
+    asq img --web
+    asq img --web --no-open"
 )]
 pub struct ImgArgs {
     #[arg(long, conflicts_with = "clipboard", help = "Start the image web UI")]

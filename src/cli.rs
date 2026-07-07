@@ -159,15 +159,23 @@ pub enum CliCommand {
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Print the current local date and time.\n\nUse this when an agent needs a deterministic CLI-accessible timestamp from the local machine. Compact output is human-readable; JSON output returns separate date/time fields plus timezone.",
-    after_help = "Examples:\n  squire now\n  squire --print json now"
+    long_about = "Print the current local date and time.
+
+Use this when an agent needs a deterministic CLI-accessible timestamp from the local machine. Compact output is human-readable; JSON output returns separate date/time fields plus timezone.",
+    after_help = "Examples:
+    asq now
+    asq --print json now"
 )]
 pub struct NowArgs {}
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "List built-in Squire commands and configured external command mappings.\n\nUse this when an agent needs to discover available tools, aliases, and short command summaries in the current environment. JSON output includes built-in command metadata and mapped command configuration.",
-    after_help = "Examples:\n  squire list\n  squire --print json list"
+    long_about = "List built-in Squire commands and configured external command mappings.
+
+Use this when an agent needs to discover available tools, aliases, and short command summaries in the current environment. JSON output includes built-in command metadata and mapped command configuration.",
+    after_help = "Examples:
+    asq list
+    asq --print json list"
 )]
 pub struct ListArgs {}
 

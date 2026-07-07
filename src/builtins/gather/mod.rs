@@ -81,7 +81,11 @@ output: C:\Users\...\Temp\agent-temp\asq-gather-<timestamp>-<uuid>.md
 #[derive(Args, Debug)]
 #[command(
     long_about = "Gather files, directory/glob file groups, trees, and command output into one prompt body. By default, rendered content is written to a persistent file under the system temp agent-temp directory; use --stdout for pipeline mode.",
-    after_help = "Examples:\n  asq gather file:src/main.rs cmd:\"git status\"\n  asq gather --stdout file:src/main.rs:1-80\n  asq gather --no-gitignore dir:target\n  asq gather -i"
+    after_help = "Examples:
+    asq gather file:src/main.rs cmd:\"git status\"
+    asq gather --stdout file:src/main.rs:1-80
+    asq gather --no-gitignore dir:target
+    asq gather -i"
 )]
 pub struct GatherArgs {
     #[arg(

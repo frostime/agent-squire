@@ -118,7 +118,7 @@ asq patch-edit --stdin --dry-run < patch.md
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Apply SEARCH/REPLACE patch blocks. The patch argument supports literal text, @stdin, @file:path, and @env:NAME."
+    long_about = "Apply SEARCH/REPLACE patch blocks. The patch argument supports literal text, @stdin, @file:path, and @env:NAME. See asq patch --prompt for DSL syntax."
 )]
 pub struct PatchEditArgs {
     #[arg(help = "Patch content or input source: literal, @stdin, @file:path, @env:NAME")]

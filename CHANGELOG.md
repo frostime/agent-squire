@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [v0.10.2] — 2026-07-07
+
+### Added
+
+- Show MD5 hashes for files in the `tree` output using the new `--hash` flag
+
+### Changed
+
+- Adjust the text string in the source code to a multi-line string  
+
 ## [v0.10.1] — 2026-07-01
 
 ### Fixed

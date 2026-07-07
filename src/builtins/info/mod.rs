@@ -19,8 +19,16 @@ const GLOB_CHARS: &[char] = &['*', '?', '['];
 
 #[derive(Args, Debug)]
 #[command(
-    long_about = "Inspect file metadata and text/binary format without printing file contents.\n\nUse this when an agent needs to decide whether a file is safe/useful to read: size, binary/text kind, detected encoding, newline style, BOM, modified time, and line count when available. It accepts files, directories, and glob patterns; directories are expanded recursively.\n\nThis command does not search inside files and does not summarize content. Use `rg` for search, `md-toc` for Markdown heading navigation, and `read-range` to read selected line ranges.",
-    after_help = "Examples:\n  squire file-info README.md src/cli.rs\n  squire file-info src --max-files 20\n  squire file-info \"docs/**/*.md\"\n  squire --print json file-info README.md"
+    long_about = r#"Inspect file metadata and text/binary format without printing file contents.
+
+Use this when an agent needs to decide whether a file is safe/useful to read: size, binary/text kind, detected encoding, newline style, BOM, modified time, and line count when available. It accepts files, directories, and glob patterns; directories are expanded recursively.
+
+This command does not search inside files and does not summarize content. Use `rg` for search, `md-toc` for Markdown heading navigation, and `read-range` to read selected line ranges."#,
+    after_help = r#"Examples:
+    asq file-info README.md src/cli.rs
+    asq file-info src --max-files 20
+    asq file-info "docs/**/*.md"
+    asq --print json file-info README.md"#
 )]
 pub struct InfoArgs {
     #[arg(help = "Files, directories, or glob patterns to inspect")]
