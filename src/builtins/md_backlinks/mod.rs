@@ -11,7 +11,8 @@ use crate::builtins::md_links::sources::display_path;
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 use crate::shared::file_sources::{
-    self as source, Dedup, GitignoreMode, MARKDOWN_EXTENSIONS, SourcePolicy,
+    self as source, Dedup, DirectorySelection, GlobDirectoryMode, IgnoreSources,
+    MARKDOWN_EXTENSIONS, SourcePolicy,
 };
 
 #[derive(Args, Debug)]
@@ -38,10 +39,7 @@ pub struct MdBacklinksArgs {
     )]
     pub from: Vec<String>,
 
-    #[arg(
-        long,
-        help = "Include files normally hidden by .gitignore and built-in skip rules"
-    )]
+    #[arg(long, help = "Do not apply Git ignore rules")]
     pub no_gitignore: bool,
 }
 
@@ -93,7 +91,12 @@ pub fn run(args: MdBacklinksArgs, ctx: &CommandContext) -> Result<u8> {
         .map(|(idx, page)| (normalized_path_key(&page.path), idx))
         .collect::<BTreeMap<_, _>>();
 
-    let (corpus_files, mut warnings) = discover_corpus(&from, &root, !args.no_gitignore)?;
+    let ignore_sources = if args.no_gitignore {
+        IgnoreSources::DOT_IGNORE | IgnoreSources::BUILTIN_DIRS
+    } else {
+        IgnoreSources::all()
+    };
+    let (corpus_files, mut warnings) = discover_corpus(&from, &root, ignore_sources)?;
     if corpus_files.is_empty() && !warnings.is_empty() {
         anyhow::bail!("No Markdown files found for: {}", from.join(", "));
     }
@@ -139,14 +142,14 @@ pub fn run(args: MdBacklinksArgs, ctx: &CommandContext) -> Result<u8> {
         pages,
     };
 
-    print(data, warnings, &root, &from, !args.no_gitignore, ctx.print)?;
+    print(data, warnings, &root, &from, ignore_sources, ctx.print)?;
     Ok(0)
 }
 
 fn discover_corpus(
     from: &[String],
     root: &Path,
-    respect_gitignore: bool,
+    ignore_sources: IgnoreSources,
 ) -> Result<(Vec<SourceFile>, Vec<String>)> {
     // Corpus is keyed by display path so two inputs resolving to the same path
     // (e.g. an explicit file plus a dir walk) collapse to one SourceFile.
@@ -154,11 +157,8 @@ fn discover_corpus(
         from,
         SourcePolicy {
             root,
-            gitignore: if respect_gitignore {
-                GitignoreMode::Respect
-            } else {
-                GitignoreMode::Off
-            },
+            directory_selection: DirectorySelection::Filtered(ignore_sources),
+            glob_directory_mode: GlobDirectoryMode::Skip,
             accept_file: &source::is_markdown_file,
             filter_explicit_file: true,
             filter_glob: true,
@@ -239,9 +239,11 @@ fn print(
     warnings: Vec<String>,
     root: &Path,
     from: &[String],
-    respect_gitignore: bool,
+    ignore_sources: IgnoreSources,
     mode: PrintMode,
 ) -> Result<()> {
+    let respect_gitignore = ignore_sources.contains(IgnoreSources::GIT);
+    let builtin_skip = ignore_sources.contains(IgnoreSources::BUILTIN_DIRS);
     match mode {
         PrintMode::Json => {
             let payload = Envelope::new("md-backlinks", data)
@@ -250,12 +252,12 @@ fn print(
                     "cwd": root_display(root),
                     "from": from,
                     "respect_gitignore": respect_gitignore,
-                    "builtin_skip": respect_gitignore,
+                    "builtin_skip": builtin_skip,
                     "extensions": MARKDOWN_EXTENSIONS,
                 }));
             output::print_json(&payload)?;
         }
-        _ => print_compact(&data, &warnings, respect_gitignore),
+        _ => print_compact(&data, &warnings, respect_gitignore, builtin_skip),
     }
     Ok(())
 }
@@ -264,14 +266,15 @@ fn root_display(root: &Path) -> String {
     root.to_string_lossy().replace('\\', "/")
 }
 
-fn print_compact(data: &MdBacklinksData, warnings: &[String], respect_gitignore: bool) {
+fn print_compact(
+    data: &MdBacklinksData,
+    warnings: &[String],
+    respect_gitignore: bool,
+    builtin_skip: bool,
+) {
     println!(
         "# focus={} corpus_files={} backlinks={} gitignore={} builtin_skip={}",
-        data.focus_count,
-        data.corpus_files,
-        data.total_backlinks,
-        respect_gitignore,
-        respect_gitignore
+        data.focus_count, data.corpus_files, data.total_backlinks, respect_gitignore, builtin_skip
     );
 
     for warning in warnings {

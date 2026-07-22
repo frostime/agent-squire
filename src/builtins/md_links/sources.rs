@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::shared::file_sources::{self as source, Dedup, GitignoreMode, SourcePolicy};
+use crate::shared::file_sources::{
+    self as source, Dedup, DirectorySelection, GlobDirectoryMode, SourcePolicy,
+};
 use crate::shared::path;
 
 use super::model::SourceFile;
@@ -16,7 +18,8 @@ pub fn resolve_sources(
         sources,
         SourcePolicy {
             root: workspace,
-            gitignore: GitignoreMode::Off,
+            directory_selection: DirectorySelection::All,
+            glob_directory_mode: GlobDirectoryMode::Skip,
             accept_file: &md_only,
             filter_explicit_file: false,
             filter_glob: false,

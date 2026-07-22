@@ -6,7 +6,9 @@ use serde::Serialize;
 
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
-use crate::shared::file_sources::{self as source, Dedup, GitignoreMode, SourcePolicy};
+use crate::shared::file_sources::{
+    self as source, Dedup, DirectorySelection, GlobDirectoryMode, SourcePolicy,
+};
 
 #[derive(Args, Debug)]
 #[command(
@@ -142,7 +144,8 @@ fn resolve_sources(sources: &[String], cwd: &Path) -> Result<(Vec<PathBuf>, Vec<
         sources,
         SourcePolicy {
             root: cwd,
-            gitignore: GitignoreMode::Off,
+            directory_selection: DirectorySelection::All,
+            glob_directory_mode: GlobDirectoryMode::Skip,
             accept_file: &md_only,
             filter_explicit_file: false,
             filter_glob: false,

@@ -12,75 +12,78 @@ output item.
 
 ## Why a single resolver
 
-The four implementations differed only along a small axis set (gitignore
-respect, file filter, dedup strategy, max-files cap, typed output). Before this
-module each owned a copy of the glob-magic detection, the directory walker
-configuration, the sort, and the missing-input bookkeeping — ~250 lines of
-near-duplicate code.
+The four implementations differed along a bounded set of axes: directory
+selection, glob-directory expansion, file filtering, deduplication, maximum
+files, and typed output. The resolver owns expansion, ordering, limits, and
+unresolved-source accounting while callers declare those differences.
 
 ## Policy axes (`SourcePolicy<T>`)
 
 | Axis | Type | Notes |
 |---|---|---|
 | `root` | `&Path` | Workspace root forwarded to `map` and the `Dedup::ByKey` key. Set to the `CommandContext` cwd by callers. |
-| `gitignore` | `GitignoreMode` | `Off` mirrors legacy `walkdir::WalkDir` (no gitignore, no `ALWAYS_SKIP` filter, hidden files included). `Respect` enables .gitignore/git-global/git-exclude and the `ALWAYS_SKIP` filter. |
-| `accept_file` | `&dyn Fn(&Path) -> bool` | Higher-order file test applied to dir/glob expansion. Inject `is_markdown_file` for Markdown builtins, `\|_\| true` for `file-info`, or any custom predicate. |
-| `filter_explicit_file` | `bool` | When true, an input naming an existing file must pass `accept_file`; rejection becomes unresolved. `md-backlinks` sets this true; `toc`/`md-links`/`file-info` leave it false (explicitly named files are accepted as-is). |
-| `filter_glob` | `bool` | When true, glob matches must pass `accept_file`; when false every glob-matched file is accepted (legacy `toc`/`md-links`/`file-info` glob branch only checked `is_file()`). `md-backlinks` sets true. |
-| `dedup` | `Dedup` | `None`, `Canonicalize` (file-info), or `ByKey(&dyn Fn(&Path,&Path)->String)` (md-backlinks, keying by display path; last mapping wins and output is key-sorted, matching the prior `BTreeMap`). |
-| `max_files` | `Option<usize>` | file-info cap; stop accepting once reached. |
-| `map` | `&dyn Fn(PathBuf, &Path) -> Option<T>` | Convert an accepted `PathBuf` to the builtin's output item; `None` drops it. |
+| `directory_selection` | `DirectorySelection` | `All` uses plain `WalkDir` and applies no ignore rules. `Filtered(IgnoreSources)` uses `WalkBuilder` and applies the selected rule sources. |
+| `glob_directory_mode` | `GlobDirectoryMode` | `Skip` ignores directories returned by glob matching. `Recurse` expands them through the same directory path used by explicit directory inputs. |
+| `accept_file` | `&dyn Fn(&Path) -> bool` | File predicate applied during directory recursion and, when enabled, glob expansion. |
+| `filter_explicit_file` | `bool` | When true, an explicit existing file must pass `accept_file`; rejection becomes unresolved. |
+| `filter_glob` | `bool` | When true, glob-matched files must pass `accept_file`; recursive glob directories always use the normal directory predicate. |
+| `dedup` | `Dedup` | `None`, `Canonicalize`, or caller-provided `ByKey`. |
+| `max_files` | `Option<usize>` | Stop accepting files once the mapped, deduplicated result reaches the cap. |
+| `map` | `&dyn Fn(PathBuf, &Path) -> Option<T>` | Convert an accepted file path to the caller's output item. |
+
+## Ignore sources
+
+`IgnoreSources` is a bitflag set. Each flag represents one independent source
+of file exclusion:
+
+| Flag | Rules |
+|---|---|
+| `DOT_IGNORE` | `.ignore` files |
+| `GIT` | `.gitignore`, global Git ignore, and Git exclude |
+| `BUILTIN_DIRS` | Directory names in `ALWAYS_SKIP` |
+
+These flags do not control hidden files, glob recursion, predicates, or
+traversal depth. Filtered walks set `hidden(false)` so dotfiles remain visible
+unless one of the selected rule sources excludes them.
 
 ## Caller mapping
 
-| Builtin | gitignore | accept_file | filter_explicit_file | dedup | map |
+| Builtin | Directory selection | Glob directories | Explicit file filter | Glob file filter | Dedup |
 |---|---|---|---|---|---|
-| `toc` | `Off` | `ext == "md"` | `false` | `false` | `None` | identity `PathBuf` |
-| `md-links` | `Off` | `ext == "md"` | `false` | `false` | `None` | `SourceFile{ path, display_path }` |
-| `md-backlinks` | `Respect`/`Off` (via `--no-gitignore`) | `is_markdown_file` | `true` | `true` | `ByKey` (display path) | `SourceFile{ path, display_path }` |
-| `file-info` | `Off` | `\|_\| true` | `false` | `false` | `Canonicalize` | `PathBuf` |
+| `toc` | `All` | `Skip` | off | off | `None` |
+| `md-links` | `All` | `Skip` | off | off | `None` |
+| `md-backlinks` default | `DOT_IGNORE \| GIT \| BUILTIN_DIRS` | `Skip` | markdown | markdown | `ByKey` |
+| `md-backlinks --no-gitignore` | `DOT_IGNORE \| BUILTIN_DIRS` | `Skip` | markdown | markdown | `ByKey` |
+| `file-info` | `All` | `Recurse` | off | off | `Canonicalize` |
 
-`gather` is intentionally **not** routed through this resolver: its inputs are
+`gather` is intentionally not routed through this resolver: its inputs are
 single-path expansion (`expand_dir`, `expand_glob`, `fzf_*`), not mixed
-file/dir/glob lists, and it adds the workspace-root `.gitignore` explicitly
-(`add_ignore`) to support non-Git temp workspaces. `gather` shares the
-`ALWAYS_SKIP` constant instead.
+file/dir/glob lists. `gather` shares `ALWAYS_SKIP` only.
 
 ## Equivalence guarantees
 
-1. **`Off` mode == legacy walkdir traversal**: `ignore::WalkBuilder` is
-   configured with `hidden(false)`, all git flags off, no `ALWAYS_SKIP` filter,
-   and the final matched set is `sort()`ed lexicographically on `PathBuf` — the
-   same post-sort order the original `walkdir` code produced via `found.sort()`.
-2. **`Respect` mode == `md-backlinks` walker**: git flags on plus
-   `ALWAYS_SKIP` `filter_entry`, matching `discover_corpus`.
-3. **Inputs are walked/globbed as given**, relative to the process current
-   directory. The CLI has already set the process cwd to the `CommandContext`
-   cwd in `cli::try_main`, so relative inputs resolve the same as before; this
-   preserves `toc`'s relative-path display (its `base` strip uses the original
-   source string, and walker output keeps the input relativity).
-4. **Explicit file bypasses gitignore**: an input naming an existing file is
-   accepted directly without walking, so `--from <gitignored.md>` still includes
-   that file (see `explicit_ignored_file_in_from_is_included`).
+1. `DirectorySelection::All` uses `walkdir::WalkDir`, preserving the original
+   `toc`, `md-links`, and `file-info` behavior: `.ignore`, Git ignore rules,
+   built-in skip names, and hidden-file filtering are not applied.
+2. Directories matched by `file-info` glob patterns are recursively expanded,
+   including the legacy behavior that an existing empty directory resolves the
+   glob even when it contributes no files.
+3. Filtered traversal applies exactly the `IgnoreSources` bits supplied by the
+   caller. `--no-gitignore` removes only `GIT`; `.ignore` and built-in skip
+   directories remain active.
+4. Inputs are resolved relative to the process current directory. The CLI sets
+   it to `CommandContext.cwd` before invoking builtins.
+5. Explicit files bypass directory ignore rules. An explicitly named ignored
+   Markdown file remains eligible for `md-backlinks --from`.
+6. Result sorting, deduplication, `max_files`, and mapping occur after the same
+   acceptance boundaries as before unless stated above.
 
 ## Known behavior deltas after refactor
 
-- `md-backlinks` collapses "explicit non-markdown file rejected" and
-  "corpus source not found" into a single unresolved entry. Previously these
-  produced distinct warning strings `"non-markdown corpus file skipped: …"` vs
-  `"corpus source not found: …"`. The `md-backlinks` call site now emits
-  `"corpus source not found: …"` for both. No integration test exercised the
-  markdown-skipped branch; the distinction was functional only as a warning
-  nuance and is intentionally dropped for the common resolver contract.
-- `file-info` keeps its `~`-expansion at the call site (applies to non-glob
-  inputs only, matching the original logic that expanded for the file/dir
-  existence test but kept raw glob patterns). Unresolved entries for expanded
-  inputs now report the expanded string (e.g. `/home/x.txt`) rather than the
-  raw `~/x.txt`; the previous code reported the raw source. No test covers this
-  edge case. The result is re-sorted lexicographically by canonical path so
-  multi-file output order matches the previous BTreeMap ordering.
-- `toc`/`md-links` now back the directory walk with `ignore::WalkBuilder`
-  configured for `Off` mode (no gitignore, no `ALWAYS_SKIP`, hidden files kept).
-  Sorted output is `PathBuf` byte lexicographic via `files.sort()`, matching
-  the previous `walkdir::WalkDir` + `found.sort()` ordering (the in-walker
-  case-insensitive name sort is overridden by the final lexicographic sort).
+- `md-backlinks` consolidates explicit non-Markdown rejection and missing corpus
+  sources into the warning `"corpus source not found: ..."`.
+- `file-info` unresolved entries for `~`-expanded inputs report the expanded
+  path instead of the original `~/...` source.
+- `md-backlinks --no-gitignore` now follows its literal name: it disables Git
+  ignore rules only. Built-in skip directories remain active, and JSON/compact
+  metadata report `builtin_skip=true`.

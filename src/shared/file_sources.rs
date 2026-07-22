@@ -17,9 +17,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use glob::glob;
 use ignore::WalkBuilder;
+use walkdir::WalkDir;
 
-/// Directories always skipped during gitignore-respecting walks. Shared with
-/// `tree` and `gather`; defined here so all three reference one source.
+/// Directories skipped when `IgnoreSources::BUILTIN_DIRS` is active. Shared
+/// with `tree` and `gather`; defined here so all three reference one source.
 pub const ALWAYS_SKIP: &[&str] = &[
     ".git",
     "__pycache__",
@@ -34,14 +35,32 @@ pub const GLOB_CHARS: &[char] = &['*', '?', '['];
 /// Markdown file extensions (case-insensitive).
 pub const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown"];
 
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct IgnoreSources: u8 {
+        /// Rules from `.ignore` files.
+        const DOT_IGNORE = 1 << 0;
+        /// Rules from `.gitignore`, global Git ignore, and Git exclude files.
+        const GIT = 1 << 1;
+        /// Directory names listed in [`ALWAYS_SKIP`].
+        const BUILTIN_DIRS = 1 << 2;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GitignoreMode {
-    /// Emit every file (mirrors legacy `walkdir::WalkDir` with no gitignore,
-    /// no `ALWAYS_SKIP` filter, and hidden files included).
-    Off,
-    /// Respect `.gitignore` / git-global / git-exclude plus the `ALWAYS_SKIP`
-    /// filter.
-    Respect,
+pub enum DirectorySelection {
+    /// Include every file accepted by the caller's predicate.
+    All,
+    /// Exclude files according to the selected ignore-rule sources.
+    Filtered(IgnoreSources),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobDirectoryMode {
+    /// Ignore directories returned by a glob match.
+    Skip,
+    /// Recursively expand directories returned by a glob match.
+    Recurse,
 }
 
 /// How duplicate paths are collapsed across inputs.
@@ -59,7 +78,8 @@ pub struct SourcePolicy<'a, T> {
     /// Workspace root forwarded to `map` and the `Dedup::ByKey` key. Should
     /// equal the `CommandContext` cwd.
     pub root: &'a Path,
-    pub gitignore: GitignoreMode,
+    pub directory_selection: DirectorySelection,
+    pub glob_directory_mode: GlobDirectoryMode,
     /// File acceptance test applied to files found via directory recursion or
     /// glob expansion. Inject `is_markdown_file` for Markdown builtins,
     /// `|_| true` for `file-info`, or any custom predicate.
@@ -104,33 +124,7 @@ pub fn resolve<T>(inputs: &[String], policy: SourcePolicy<'_, T>) -> Result<(Vec
 
         let path = PathBuf::from(source);
         if path.is_dir() {
-            if policy.max_files.is_some() {
-                // `file-info --max-files` must not materialize an entire large
-                // directory before applying its cap. Stop as soon as the
-                // configured number of mapped, deduplicated results is reached.
-                for_each_dir_file(&path, policy.gitignore, policy.accept_file, |file| {
-                    accept_into(
-                        &file,
-                        policy.root,
-                        &policy,
-                        &mut seen_canon,
-                        &mut keyed,
-                        &mut out,
-                    );
-                    !max_reached(policy.max_files, resolved_len(&out, &keyed, &policy.dedup))
-                })?;
-            } else {
-                for file in walk_dir(&path, policy.gitignore, policy.accept_file)? {
-                    accept_into(
-                        &file,
-                        policy.root,
-                        &policy,
-                        &mut seen_canon,
-                        &mut keyed,
-                        &mut out,
-                    );
-                }
-            }
+            expand_directory_into(&path, &policy, &mut seen_canon, &mut keyed, &mut out)?;
         } else if path.is_file() {
             let accept = !policy.filter_explicit_file || (policy.accept_file)(&path);
             if accept {
@@ -148,18 +142,28 @@ pub fn resolve<T>(inputs: &[String], policy: SourcePolicy<'_, T>) -> Result<(Vec
         } else if has_glob_magic(source) {
             let mut any = false;
             for entry in glob(source).with_context(|| format!("invalid glob pattern: {source}"))? {
+                if max_reached(policy.max_files, resolved_len(&out, &keyed, &policy.dedup)) {
+                    break;
+                }
                 let matched = match entry {
                     Ok(p) => p,
                     Err(_) => continue,
                 };
-                if !matched.is_file() {
+                if matched.is_dir() {
+                    if policy.glob_directory_mode == GlobDirectoryMode::Recurse {
+                        any = true;
+                        expand_directory_into(
+                            &matched,
+                            &policy,
+                            &mut seen_canon,
+                            &mut keyed,
+                            &mut out,
+                        )?;
+                    }
                     continue;
                 }
-                if policy.filter_glob && !(policy.accept_file)(&matched) {
+                if !matched.is_file() || (policy.filter_glob && !(policy.accept_file)(&matched)) {
                     continue;
-                }
-                if max_reached(policy.max_files, resolved_len(&out, &keyed, &policy.dedup)) {
-                    break;
                 }
                 any = true;
                 accept_into(
@@ -183,6 +187,33 @@ pub fn resolve<T>(inputs: &[String], policy: SourcePolicy<'_, T>) -> Result<(Vec
         out = keyed.into_values().collect();
     }
     Ok((out, unresolved))
+}
+
+fn expand_directory_into<T>(
+    path: &Path,
+    policy: &SourcePolicy<'_, T>,
+    seen_canon: &mut BTreeSet<PathBuf>,
+    keyed: &mut BTreeMap<String, T>,
+    out: &mut Vec<T>,
+) -> Result<()> {
+    if policy.max_files.is_some() {
+        // `file-info --max-files` must not materialize an entire large
+        // directory before applying its cap.
+        for_each_dir_file(
+            path,
+            policy.directory_selection,
+            policy.accept_file,
+            |file| {
+                accept_into(file.as_path(), policy.root, policy, seen_canon, keyed, out);
+                !max_reached(policy.max_files, resolved_len(out, keyed, &policy.dedup))
+            },
+        )?;
+    } else {
+        for file in walk_dir(path, policy.directory_selection, policy.accept_file)? {
+            accept_into(&file, policy.root, policy, seen_canon, keyed, out);
+        }
+    }
+    Ok(())
 }
 
 fn accept_into<T>(
@@ -230,11 +261,11 @@ fn max_reached(max_files: Option<usize>, len: usize) -> bool {
 
 fn walk_dir(
     root: &Path,
-    gitignore: GitignoreMode,
+    selection: DirectorySelection,
     accept: &dyn Fn(&Path) -> bool,
 ) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
-    for_each_dir_file(root, gitignore, accept, |path| {
+    for_each_dir_file(root, selection, accept, |path| {
         files.push(path);
         true
     })?;
@@ -244,30 +275,45 @@ fn walk_dir(
 
 fn for_each_dir_file(
     root: &Path,
-    gitignore: GitignoreMode,
+    selection: DirectorySelection,
     accept: &dyn Fn(&Path) -> bool,
     mut visit: impl FnMut(PathBuf) -> bool,
 ) -> Result<()> {
-    let mut walker = WalkBuilder::new(root);
-    walker
-        .hidden(false)
-        .git_ignore(gitignore == GitignoreMode::Respect)
-        .git_global(gitignore == GitignoreMode::Respect)
-        .git_exclude(gitignore == GitignoreMode::Respect)
-        .sort_by_file_name(sort_entry_name);
+    match selection {
+        DirectorySelection::All => {
+            for entry in WalkDir::new(root).sort_by_file_name() {
+                let Ok(entry) = entry else { continue };
+                let path = entry.into_path();
+                if path.is_file() && accept(&path) && !visit(path) {
+                    break;
+                }
+            }
+        }
+        DirectorySelection::Filtered(sources) => {
+            let git = sources.contains(IgnoreSources::GIT);
+            let mut walker = WalkBuilder::new(root);
+            walker
+                .hidden(false)
+                .ignore(sources.contains(IgnoreSources::DOT_IGNORE))
+                .git_ignore(git)
+                .git_global(git)
+                .git_exclude(git)
+                .sort_by_file_name(sort_entry_name);
 
-    if gitignore == GitignoreMode::Respect {
-        walker.filter_entry(|entry| {
-            let name = entry.file_name().to_str().unwrap_or("");
-            !ALWAYS_SKIP.contains(&name)
-        });
-    }
+            if sources.contains(IgnoreSources::BUILTIN_DIRS) {
+                walker.filter_entry(|entry| {
+                    let name = entry.file_name().to_str().unwrap_or("");
+                    !ALWAYS_SKIP.contains(&name)
+                });
+            }
 
-    for entry in walker.build() {
-        let Ok(entry) = entry else { continue };
-        let path = entry.path().to_path_buf();
-        if path.is_file() && accept(&path) && !visit(path) {
-            break;
+            for entry in walker.build() {
+                let Ok(entry) = entry else { continue };
+                let path = entry.path().to_path_buf();
+                if path.is_file() && accept(&path) && !visit(path) {
+                    break;
+                }
+            }
         }
     }
     Ok(())
@@ -323,19 +369,23 @@ mod tests {
     }
 
     #[test]
-    fn dir_off_includes_hidden_and_no_gitignore() {
+    fn all_selection_ignores_every_exclusion_source() {
         let dir = tempdir().unwrap();
         write(dir.path(), "a.md", "");
         write(dir.path(), ".hidden/b.md", "");
-        fs::write(dir.path().join(".gitignore"), "ignored.md\n").unwrap();
-        write(dir.path(), "ignored.md", "");
+        write(dir.path(), "git-ignored.md", "");
+        write(dir.path(), "dot-ignored.md", "");
+        write(dir.path(), "node_modules/x.md", "");
+        fs::write(dir.path().join(".gitignore"), "git-ignored.md\n").unwrap();
+        fs::write(dir.path().join(".ignore"), "dot-ignored.md\n").unwrap();
 
         let input = dir.path().to_string_lossy().to_string();
         let (files, unresolved) = resolve(
             &[input],
             SourcePolicy {
                 root: dir.path(),
-                gitignore: GitignoreMode::Off,
+                directory_selection: DirectorySelection::All,
+                glob_directory_mode: GlobDirectoryMode::Skip,
                 accept_file: &is_markdown_file,
                 filter_explicit_file: false,
                 filter_glob: true,
@@ -346,28 +396,38 @@ mod tests {
         )
         .unwrap();
 
-        // Off mode: ignore walker yields hidden files and ignores .gitignore,
-        // matching legacy walkdir.
-        let got = display(&files, dir.path());
-        assert!(got.contains(&".hidden/b.md".to_string()));
-        assert!(got.contains(&"ignored.md".to_string()));
+        assert_eq!(
+            display(&files, dir.path()),
+            vec![
+                ".hidden/b.md",
+                "a.md",
+                "dot-ignored.md",
+                "git-ignored.md",
+                "node_modules/x.md",
+            ]
+        );
         assert!(unresolved.is_empty());
     }
 
     #[test]
-    fn dir_respect_skips_gitignore_and_always_skip() {
+    fn filtered_selection_applies_selected_ignore_sources() {
         let dir = tempdir().unwrap();
         write(dir.path(), "a.md", "");
+        write(dir.path(), "git-ignored.md", "");
+        write(dir.path(), "dot-ignored.md", "");
         write(dir.path(), "node_modules/x.md", "");
-        fs::write(dir.path().join(".gitignore"), "ignored.md\n").unwrap();
-        write(dir.path(), "ignored.md", "");
+        fs::write(dir.path().join(".gitignore"), "git-ignored.md\n").unwrap();
+        fs::write(dir.path().join(".ignore"), "dot-ignored.md\n").unwrap();
 
         let input = dir.path().to_string_lossy().to_string();
         let (files, _) = resolve(
             &[input],
             SourcePolicy {
                 root: dir.path(),
-                gitignore: GitignoreMode::Respect,
+                directory_selection: DirectorySelection::Filtered(
+                    IgnoreSources::DOT_IGNORE | IgnoreSources::BUILTIN_DIRS,
+                ),
+                glob_directory_mode: GlobDirectoryMode::Skip,
                 accept_file: &is_markdown_file,
                 filter_explicit_file: false,
                 filter_glob: true,
@@ -378,10 +438,7 @@ mod tests {
         )
         .unwrap();
 
-        let got = display(&files, dir.path());
-        assert!(got.contains(&"a.md".to_string()));
-        assert!(!got.contains(&"ignored.md".to_string()));
-        assert!(!got.contains(&"node_modules/x.md".to_string()));
+        assert_eq!(display(&files, dir.path()), vec!["a.md", "git-ignored.md"]);
     }
 
     #[test]
@@ -395,7 +452,8 @@ mod tests {
             std::slice::from_ref(&input),
             SourcePolicy {
                 root: dir.path(),
-                gitignore: GitignoreMode::Off,
+                directory_selection: DirectorySelection::All,
+                glob_directory_mode: GlobDirectoryMode::Skip,
                 accept_file: &is_markdown_file,
                 filter_explicit_file: false,
                 filter_glob: true,
@@ -413,7 +471,8 @@ mod tests {
             &[input],
             SourcePolicy {
                 root: dir.path(),
-                gitignore: GitignoreMode::Off,
+                directory_selection: DirectorySelection::All,
+                glob_directory_mode: GlobDirectoryMode::Skip,
                 accept_file: &is_markdown_file,
                 filter_explicit_file: true,
                 filter_glob: true,
@@ -438,7 +497,8 @@ mod tests {
             &[hit, miss],
             SourcePolicy {
                 root: dir.path(),
-                gitignore: GitignoreMode::Off,
+                directory_selection: DirectorySelection::All,
+                glob_directory_mode: GlobDirectoryMode::Skip,
                 accept_file: &is_markdown_file,
                 filter_explicit_file: false,
                 filter_glob: true,
@@ -454,6 +514,76 @@ mod tests {
     }
 
     #[test]
+    fn glob_directory_mode_controls_recursive_expansion() {
+        let dir = tempdir().unwrap();
+        write(dir.path(), "packages/alpha/nested.md", "");
+        let pattern = dir
+            .path()
+            .join("packages/*")
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        let resolve_with = |glob_directory_mode| {
+            resolve(
+                std::slice::from_ref(&pattern),
+                SourcePolicy {
+                    root: dir.path(),
+                    directory_selection: DirectorySelection::All,
+                    glob_directory_mode,
+                    accept_file: &is_markdown_file,
+                    filter_explicit_file: false,
+                    filter_glob: true,
+                    dedup: Dedup::None,
+                    max_files: None,
+                    map: ident_map(),
+                },
+            )
+            .unwrap()
+        };
+
+        let (skipped, unresolved) = resolve_with(GlobDirectoryMode::Skip);
+        assert!(skipped.is_empty());
+        assert_eq!(unresolved, vec![pattern.clone()]);
+
+        let (recursed, unresolved) = resolve_with(GlobDirectoryMode::Recurse);
+        assert_eq!(
+            display(&recursed, dir.path()),
+            vec!["packages/alpha/nested.md"]
+        );
+        assert!(unresolved.is_empty());
+    }
+
+    #[test]
+    fn recursed_empty_glob_directory_counts_as_resolved() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("packages/empty")).unwrap();
+        let pattern = dir
+            .path()
+            .join("packages/*")
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        let (files, unresolved) = resolve(
+            &[pattern],
+            SourcePolicy {
+                root: dir.path(),
+                directory_selection: DirectorySelection::All,
+                glob_directory_mode: GlobDirectoryMode::Recurse,
+                accept_file: &is_markdown_file,
+                filter_explicit_file: false,
+                filter_glob: true,
+                dedup: Dedup::None,
+                max_files: None,
+                map: ident_map(),
+            },
+        )
+        .unwrap();
+
+        assert!(files.is_empty());
+        assert!(unresolved.is_empty());
+    }
+
+    #[test]
     fn canonicalize_dedup_collapses_overlapping_inputs() {
         let dir = tempdir().unwrap();
         write(dir.path(), "a.md", "");
@@ -463,7 +593,8 @@ mod tests {
             &[file_input, dir_input],
             SourcePolicy {
                 root: dir.path(),
-                gitignore: GitignoreMode::Off,
+                directory_selection: DirectorySelection::All,
+                glob_directory_mode: GlobDirectoryMode::Skip,
                 accept_file: &is_markdown_file,
                 filter_explicit_file: false,
                 filter_glob: true,
@@ -495,7 +626,8 @@ mod tests {
             &[input],
             SourcePolicy {
                 root: dir.path(),
-                gitignore: GitignoreMode::Off,
+                directory_selection: DirectorySelection::All,
+                glob_directory_mode: GlobDirectoryMode::Skip,
                 accept_file: &accept,
                 filter_explicit_file: false,
                 filter_glob: true,
@@ -531,7 +663,8 @@ mod tests {
             &[z.clone(), first_a, last_a.clone()],
             SourcePolicy {
                 root: dir.path(),
-                gitignore: GitignoreMode::Off,
+                directory_selection: DirectorySelection::All,
+                glob_directory_mode: GlobDirectoryMode::Skip,
                 accept_file: &is_markdown_file,
                 filter_explicit_file: false,
                 filter_glob: true,

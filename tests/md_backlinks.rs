@@ -163,12 +163,20 @@ fn plain_text_filename_is_not_a_backlink() {
 }
 
 #[test]
-fn default_corpus_respects_gitignore_and_no_gitignore_overrides_it() {
+fn no_gitignore_disables_only_git_ignore_rules() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("notes")).unwrap();
-    fs::write(dir.path().join(".gitignore"), "ignored.md\n").unwrap();
+    fs::create_dir_all(dir.path().join("node_modules")).unwrap();
+    fs::write(dir.path().join(".gitignore"), "git-ignored.md\n").unwrap();
+    fs::write(dir.path().join(".ignore"), "dot-ignored.md\n").unwrap();
     fs::write(dir.path().join("notes/foo.md"), "# Foo\n").unwrap();
-    fs::write(dir.path().join("ignored.md"), "[foo](notes/foo.md)\n").unwrap();
+    fs::write(dir.path().join("git-ignored.md"), "[foo](notes/foo.md)\n").unwrap();
+    fs::write(dir.path().join("dot-ignored.md"), "[foo](notes/foo.md)\n").unwrap();
+    fs::write(
+        dir.path().join("node_modules/skipped.md"),
+        "[foo](notes/foo.md)\n",
+    )
+    .unwrap();
     fs::write(dir.path().join("visible.md"), "# Visible\n").unwrap();
 
     let default_output = Command::cargo_bin("squire")
@@ -184,7 +192,7 @@ fn default_corpus_respects_gitignore_and_no_gitignore_overrides_it() {
     assert_eq!(default_json["data"]["total_backlinks"], 0);
     assert_eq!(default_json["meta"]["respect_gitignore"], true);
 
-    let all_output = Command::cargo_bin("squire")
+    let no_gitignore_output = Command::cargo_bin("squire")
         .unwrap()
         .current_dir(dir.path())
         .args([
@@ -199,13 +207,14 @@ fn default_corpus_respects_gitignore_and_no_gitignore_overrides_it() {
         .get_output()
         .stdout
         .clone();
-    let all_json: Value = serde_json::from_slice(&all_output).unwrap();
-    assert_eq!(all_json["data"]["total_backlinks"], 1);
+    let no_gitignore_json: Value = serde_json::from_slice(&no_gitignore_output).unwrap();
+    assert_eq!(no_gitignore_json["data"]["total_backlinks"], 1);
     assert_eq!(
-        all_json["data"]["pages"][0]["backlinks"][0]["source"],
-        "ignored.md"
+        no_gitignore_json["data"]["pages"][0]["backlinks"][0]["source"],
+        "git-ignored.md"
     );
-    assert_eq!(all_json["meta"]["respect_gitignore"], false);
+    assert_eq!(no_gitignore_json["meta"]["respect_gitignore"], false);
+    assert_eq!(no_gitignore_json["meta"]["builtin_skip"], true);
 }
 
 #[test]

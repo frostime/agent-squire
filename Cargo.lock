@@ -16,6 +16,7 @@ dependencies = [
  "arboard",
  "assert_cmd",
  "axum",
+ "bitflags",
  "chrono",
  "clap",
  "clipboard-win",

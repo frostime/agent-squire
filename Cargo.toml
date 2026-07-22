@@ -33,6 +33,7 @@ path = "src/bin/asq.rs"
 
 [dependencies]
 anyhow = "1"
+bitflags = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 encoding_rs = "0.8"

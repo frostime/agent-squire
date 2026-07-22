@@ -60,6 +60,7 @@ fn json_output_extracts_reference_occurrences_and_resolves_files() {
 fn directory_and_glob_sources_discover_markdown_files() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("docs/nested")).unwrap();
+    fs::write(dir.path().join("docs/.ignore"), "nested/\n").unwrap();
     fs::write(dir.path().join("docs/a.md"), "[x](missing-a.md)\n").unwrap();
     fs::write(dir.path().join("docs/nested/b.md"), "[x](missing-b.md)\n").unwrap();
     fs::write(dir.path().join("docs/skip.txt"), "[x](skip.md)\n").unwrap();
