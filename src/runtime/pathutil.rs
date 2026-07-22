@@ -73,17 +73,17 @@ mod tests {
 
     #[test]
     fn display_relative_fallback_strips_after_canonicalize() {
-        // path produced as a relative child of base (simulating a walker-built
-        // path) should strip to a relative display even without literal prefix.
-        let dir = std::env::current_dir().unwrap();
-        let base = dir.join("tmp_pf");
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("base");
+        let sibling = dir.path().join("sibling");
         std::fs::create_dir_all(&base).unwrap();
-        let child = base.join("a.md");
-        std::fs::write(&child, "x").unwrap();
-        // PathBuf built relative to cwd (mirrors walker for toc/md_links):
-        let rel = PathBuf::from("tmp_pf/a.md");
-        assert_eq!(display_relative_fallback(&rel, &dir), "tmp_pf/a.md");
-        std::fs::remove_dir_all(&base).ok();
+        std::fs::create_dir_all(&sibling).unwrap();
+        std::fs::write(base.join("a.md"), "x").unwrap();
+
+        // This path resolves to base/a.md but does not literally start with
+        // base, so the canonicalize fallback is required to render a.md.
+        let via_sibling = sibling.join("..").join("base").join("a.md");
+        assert_eq!(display_relative_fallback(&via_sibling, &base), "a.md");
     }
 
     #[test]

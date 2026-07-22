@@ -10,7 +10,7 @@
 //! See `.sspec/spec-docs/builtin-source-resolver.md` for the policy axis
 //! table, the caller mapping, and the equivalence guarantees.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
@@ -50,8 +50,8 @@ pub enum Dedup<'a> {
     None,
     /// Collapse by `path.canonicalize()`.
     Canonicalize,
-    /// Collapse by a caller-supplied key (typically the display path). Two
-    /// inputs resolving to the same key keep only the first mapped item.
+    /// Collapse by a caller-supplied key (typically the display path). The
+    /// last mapped item wins; final output is sorted by key.
     ByKey(&'a dyn Fn(&Path, &Path) -> String),
 }
 
@@ -89,7 +89,7 @@ pub fn resolve<T>(inputs: &[String], policy: SourcePolicy<'_, T>) -> Result<(Vec
     let mut out: Vec<T> = Vec::new();
     let mut unresolved: Vec<String> = Vec::new();
     let mut seen_canon: BTreeSet<PathBuf> = BTreeSet::new();
-    let mut seen_key: BTreeSet<String> = BTreeSet::new();
+    let mut keyed: BTreeMap<String, T> = BTreeMap::new();
 
     let work_list: Vec<String> = if inputs.is_empty() {
         vec![".".to_string()]
@@ -98,25 +98,38 @@ pub fn resolve<T>(inputs: &[String], policy: SourcePolicy<'_, T>) -> Result<(Vec
     };
 
     for source in &work_list {
-        if max_reached(policy.max_files, out.len()) {
+        if max_reached(policy.max_files, resolved_len(&out, &keyed, &policy.dedup)) {
             break;
         }
 
         let path = PathBuf::from(source);
         if path.is_dir() {
-            let files = walk_dir(&path, policy.gitignore, policy.accept_file)?;
-            for file in files {
-                if max_reached(policy.max_files, out.len()) {
-                    break;
+            if policy.max_files.is_some() {
+                // `file-info --max-files` must not materialize an entire large
+                // directory before applying its cap. Stop as soon as the
+                // configured number of mapped, deduplicated results is reached.
+                for_each_dir_file(&path, policy.gitignore, policy.accept_file, |file| {
+                    accept_into(
+                        &file,
+                        policy.root,
+                        &policy,
+                        &mut seen_canon,
+                        &mut keyed,
+                        &mut out,
+                    );
+                    !max_reached(policy.max_files, resolved_len(&out, &keyed, &policy.dedup))
+                })?;
+            } else {
+                for file in walk_dir(&path, policy.gitignore, policy.accept_file)? {
+                    accept_into(
+                        &file,
+                        policy.root,
+                        &policy,
+                        &mut seen_canon,
+                        &mut keyed,
+                        &mut out,
+                    );
                 }
-                accept_into(
-                    &file,
-                    policy.root,
-                    &policy,
-                    &mut seen_canon,
-                    &mut seen_key,
-                    &mut out,
-                );
             }
         } else if path.is_file() {
             let accept = !policy.filter_explicit_file || (policy.accept_file)(&path);
@@ -126,7 +139,7 @@ pub fn resolve<T>(inputs: &[String], policy: SourcePolicy<'_, T>) -> Result<(Vec
                     policy.root,
                     &policy,
                     &mut seen_canon,
-                    &mut seen_key,
+                    &mut keyed,
                     &mut out,
                 );
             } else {
@@ -145,7 +158,7 @@ pub fn resolve<T>(inputs: &[String], policy: SourcePolicy<'_, T>) -> Result<(Vec
                 if policy.filter_glob && !(policy.accept_file)(&matched) {
                     continue;
                 }
-                if max_reached(policy.max_files, out.len()) {
+                if max_reached(policy.max_files, resolved_len(&out, &keyed, &policy.dedup)) {
                     break;
                 }
                 any = true;
@@ -154,7 +167,7 @@ pub fn resolve<T>(inputs: &[String], policy: SourcePolicy<'_, T>) -> Result<(Vec
                     policy.root,
                     &policy,
                     &mut seen_canon,
-                    &mut seen_key,
+                    &mut keyed,
                     &mut out,
                 );
             }
@@ -166,6 +179,9 @@ pub fn resolve<T>(inputs: &[String], policy: SourcePolicy<'_, T>) -> Result<(Vec
         }
     }
 
+    if matches!(&policy.dedup, Dedup::ByKey(_)) {
+        out = keyed.into_values().collect();
+    }
     Ok((out, unresolved))
 }
 
@@ -174,25 +190,37 @@ fn accept_into<T>(
     root: &Path,
     policy: &SourcePolicy<'_, T>,
     seen_canon: &mut BTreeSet<PathBuf>,
-    seen_key: &mut BTreeSet<String>,
+    keyed: &mut BTreeMap<String, T>,
     out: &mut Vec<T>,
 ) {
-    let skip = match &policy.dedup {
-        Dedup::None => false,
+    match &policy.dedup {
+        Dedup::None => {
+            if let Some(t) = (policy.map)(path.to_path_buf(), root) {
+                out.push(t);
+            }
+        }
         Dedup::Canonicalize => {
             let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-            !seen_canon.insert(canon)
+            if !seen_canon.insert(canon) {
+                return;
+            }
+            if let Some(t) = (policy.map)(path.to_path_buf(), root) {
+                out.push(t);
+            }
         }
         Dedup::ByKey(key) => {
-            let k = key(path, root);
-            !seen_key.insert(k)
+            if let Some(t) = (policy.map)(path.to_path_buf(), root) {
+                keyed.insert(key(path, root), t);
+            }
         }
-    };
-    if skip {
-        return;
     }
-    if let Some(t) = (policy.map)(path.to_path_buf(), root) {
-        out.push(t);
+}
+
+fn resolved_len<T>(out: &[T], keyed: &BTreeMap<String, T>, dedup: &Dedup<'_>) -> usize {
+    if matches!(dedup, Dedup::ByKey(_)) {
+        keyed.len()
+    } else {
+        out.len()
     }
 }
 
@@ -205,6 +233,21 @@ fn walk_dir(
     gitignore: GitignoreMode,
     accept: &dyn Fn(&Path) -> bool,
 ) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for_each_dir_file(root, gitignore, accept, |path| {
+        files.push(path);
+        true
+    })?;
+    files.sort();
+    Ok(files)
+}
+
+fn for_each_dir_file(
+    root: &Path,
+    gitignore: GitignoreMode,
+    accept: &dyn Fn(&Path) -> bool,
+    mut visit: impl FnMut(PathBuf) -> bool,
+) -> Result<()> {
     let mut walker = WalkBuilder::new(root);
     walker
         .hidden(false)
@@ -220,16 +263,14 @@ fn walk_dir(
         });
     }
 
-    let mut files = Vec::new();
     for entry in walker.build() {
         let Ok(entry) = entry else { continue };
         let path = entry.path().to_path_buf();
-        if path.is_file() && accept(&path) {
-            files.push(path);
+        if path.is_file() && accept(&path) && !visit(path) {
+            break;
         }
     }
-    files.sort();
-    Ok(files)
+    Ok(())
 }
 
 pub fn has_glob_magic(s: &str) -> bool {
@@ -253,6 +294,7 @@ pub fn sort_entry_name(a: &OsStr, b: &OsStr) -> std::cmp::Ordering {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
 
     fn write(folder: &Path, rel: &str, body: &str) -> PathBuf {
@@ -438,18 +480,23 @@ mod tests {
     }
 
     #[test]
-    fn max_files_caps_acceptance() {
+    fn max_files_stops_directory_scan_after_accepting_limit() {
         let dir = tempdir().unwrap();
         write(dir.path(), "a.md", "");
         write(dir.path(), "b.md", "");
         write(dir.path(), "c.md", "");
         let input = dir.path().to_string_lossy().to_string();
+        let visited = AtomicUsize::new(0);
+        let accept = |_: &Path| {
+            visited.fetch_add(1, Ordering::SeqCst);
+            true
+        };
         let (files, _) = resolve(
             &[input],
             SourcePolicy {
                 root: dir.path(),
                 gitignore: GitignoreMode::Off,
-                accept_file: &is_markdown_file,
+                accept_file: &accept,
                 filter_explicit_file: false,
                 filter_glob: true,
                 dedup: Dedup::None,
@@ -458,19 +505,30 @@ mod tests {
             },
         )
         .unwrap();
+
         assert_eq!(files.len(), 2);
+        assert_eq!(visited.load(Ordering::SeqCst), 2);
     }
 
     #[test]
-    fn bykey_dedup_keys_by_display_path() {
+    fn bykey_dedup_keeps_last_item_and_sorts_by_key() {
         let dir = tempdir().unwrap();
         write(dir.path(), "a.md", "");
-        let file_input = dir.path().join("a.md").to_string_lossy().to_string();
-        let dir_input = dir.path().to_string_lossy().to_string();
-        let key =
-            |p: &Path, root: &Path| crate::runtime::pathutil::display_relative_fallback(p, root);
+        write(dir.path(), "z.md", "");
+        fs::create_dir_all(dir.path().join("alias")).unwrap();
+
+        let z = dir.path().join("z.md").to_string_lossy().to_string();
+        let first_a = dir.path().join("a.md").to_string_lossy().to_string();
+        let last_a = dir
+            .path()
+            .join("alias")
+            .join("..")
+            .join("a.md")
+            .to_string_lossy()
+            .to_string();
+        let key = |p: &Path, _: &Path| p.file_name().unwrap().to_string_lossy().to_string();
         let (files, _) = resolve(
-            &[file_input, dir_input],
+            &[z.clone(), first_a, last_a.clone()],
             SourcePolicy {
                 root: dir.path(),
                 gitignore: GitignoreMode::Off,
@@ -483,7 +541,8 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(files.len(), 1);
+
+        assert_eq!(files, vec![PathBuf::from(last_a), PathBuf::from(z)]);
     }
 
     #[test]

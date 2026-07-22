@@ -27,7 +27,7 @@ near-duplicate code.
 | `accept_file` | `&dyn Fn(&Path) -> bool` | Higher-order file test applied to dir/glob expansion. Inject `is_markdown_file` for Markdown builtins, `\|_\| true` for `file-info`, or any custom predicate. |
 | `filter_explicit_file` | `bool` | When true, an input naming an existing file must pass `accept_file`; rejection becomes unresolved. `md-backlinks` sets this true; `toc`/`md-links`/`file-info` leave it false (explicitly named files are accepted as-is). |
 | `filter_glob` | `bool` | When true, glob matches must pass `accept_file`; when false every glob-matched file is accepted (legacy `toc`/`md-links`/`file-info` glob branch only checked `is_file()`). `md-backlinks` sets true. |
-| `dedup` | `Dedup` | `None`, `Canonicalize` (file-info), or `ByKey(&dyn Fn(&Path,&Path)->String)` (md-backlinks, keying by display path). |
+| `dedup` | `Dedup` | `None`, `Canonicalize` (file-info), or `ByKey(&dyn Fn(&Path,&Path)->String)` (md-backlinks, keying by display path; last mapping wins and output is key-sorted, matching the prior `BTreeMap`). |
 | `max_files` | `Option<usize>` | file-info cap; stop accepting once reached. |
 | `map` | `&dyn Fn(PathBuf, &Path) -> Option<T>` | Convert an accepted `PathBuf` to the builtin's output item; `None` drops it. |
 
