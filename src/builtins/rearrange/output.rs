@@ -14,17 +14,13 @@ pub fn render(outcome: &Outcome, written_mode: bool, mode: PrintMode) {
 pub fn render_error(err: &RearrangeError, mode: PrintMode) {
     match mode {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: false,
-                command: "rearrange",
-                data: serde_json::Value::Null,
-                warnings: vec![],
-                meta: serde_json::json!({
+            let payload = Envelope::new("rearrange", serde_json::Value::Null)
+                .with_ok(false)
+                .with_meta(serde_json::json!({
                     "error_code": err.code.as_str(),
                     "message": err.message,
                     "line": err.line,
-                }),
-            };
+                }));
             let _ = print_json(&payload);
         }
         _ => eprintln!("error: {err}"),
@@ -81,17 +77,14 @@ fn render_compact(outcome: &Outcome, written_mode: bool) {
 }
 
 fn render_json(outcome: &Outcome, written_mode: bool) {
-    let payload = Envelope {
-        ok: true,
-        command: "rearrange",
-        data: serde_json::json!({
+    let payload = Envelope::new(
+        "rearrange",
+        serde_json::json!({
             "written": written_mode && outcome.changed,
             "changed": outcome.changed,
             "shares": outcome.shares,
             "targets": outcome.targets,
         }),
-        warnings: vec![],
-        meta: serde_json::json!({}),
-    };
+    );
     let _ = print_json(&payload);
 }

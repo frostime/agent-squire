@@ -18,9 +18,13 @@ Agent uses this to orient in the codebase. -->
 |------|---------|
 | `src/cli.rs` | CLI entry, subcommand definitions, clap derive structs |
 | `src/builtins/` | All built-in commands (each subdir = one vertical command module) |
+| `src/builtins/source.rs` | Shared file/dir/glob source resolver + `SourcePolicy` |
+| `src/builtins/markdown.rs` | Shared fenced-code-block prose-line iterator |
 | `src/builtins/patch_edit/` | Core command patch-edit; includes compatibility doc |
 | `src/runtime/input.rs` | Input source abstraction (`@stdin`, `@file:path`, `@env:NAME`) |
 | `src/runtime/output.rs` | Output mode (`PrintMode`, `Envelope<T>` JSON envelope) |
+| `src/runtime/encoding.rs` | Shared BOM detection + decoded-text newline classification |
+| `src/runtime/pathutil.rs` | Path display helpers (slash-normalize, relative-to-base) |
 | `src/external.rs` | External command mapping (TOML config parse + execution) |
 | `.agent-squire.example.toml` | External command mapping config example |
 | `CHANGELOG.md` | Version history, currently at v0.5.1 |
@@ -52,6 +56,8 @@ MUST keep entries in sync with actual spec-doc files.
 Format: `- [name](spec-docs/<file>) — one-line summary` -->
 
 - [Compose Template Engine](spec-docs/compose-template-engine.md) — parse/compile/render phases, source/modifier contracts, exec spill artifacts, and JSON output schema.
+- [Source Resolver](spec-docs/builtin-source-resolver.md) — `SourcePolicy` axis table, caller mapping (toc/md-links/md-backlinks/file-info), `gitignore off/respect` equivalence, and known behavior deltas.
+- [Runtime Encoding Primitives](spec-docs/runtime-encoding.md) — extracted BOM/newline helpers and the policy matrix that keeps each high-level decode per-builtin.
 
 ## Notes
 <!-- Project-level memory. Append-only log of learnings, gotchas, preferences.

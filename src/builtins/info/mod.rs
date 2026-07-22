@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -6,16 +5,14 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Local, SecondsFormat};
 use clap::Args;
 use encoding_rs::{GBK, UTF_16BE, UTF_16LE};
-use glob::glob;
 use serde::Serialize;
-use walkdir::WalkDir;
 
+use crate::builtins::source::{self, Dedup, GitignoreMode, SourcePolicy};
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
 const TEXT_SAMPLE_BYTES: u64 = 65_536;
 const LINE_COUNT_LIMIT: u64 = 1024 * 1024;
-const GLOB_CHARS: &[char] = &['*', '?', '['];
 
 #[derive(Args, Debug)]
 #[command(
@@ -62,7 +59,8 @@ pub fn run(args: InfoArgs, ctx: &CommandContext) -> Result<u8> {
         anyhow::bail!("--max-files must be >= 1");
     }
 
-    let (paths, missing) = resolve_sources(&args.sources, args.max_files)?;
+    let (mut paths, missing) = resolve_sources(&args.sources, args.max_files)?;
+    paths.sort();
     if paths.is_empty() && !missing.is_empty() {
         anyhow::bail!("No files found for the provided inputs.");
     }
@@ -84,13 +82,7 @@ pub fn run(args: InfoArgs, ctx: &CommandContext) -> Result<u8> {
                 files: infos,
                 missing_sources: missing,
             };
-            let payload = Envelope {
-                ok: true,
-                command: "info",
-                data,
-                warnings: vec![],
-                meta: serde_json::json!({}),
-            };
+            let payload = Envelope::new("info", data);
             output::print_json(&payload)?;
         }
         _ => {
@@ -105,87 +97,39 @@ fn resolve_sources(
     sources: &[String],
     max_files: Option<usize>,
 ) -> Result<(Vec<PathBuf>, Vec<String>)> {
-    let effective = if sources.is_empty() {
-        vec![".".to_string()]
-    } else {
-        sources.to_vec()
-    };
-    let mut ordered: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
-    let mut missing = Vec::new();
-
-    for source in effective {
-        if max_files.is_some_and(|n| ordered.len() >= n) {
-            break;
-        }
-
-        let expanded = expand_home(&source);
-        let path = PathBuf::from(&expanded);
-
-        if path.exists() {
-            add_existing(&mut ordered, &path, max_files)?;
-            continue;
-        }
-
-        if has_glob_magic(&source) {
-            let mut any = false;
-            for entry in glob(&source).with_context(|| format!("invalid glob pattern: {source}"))? {
-                let path = match entry {
-                    Ok(p) => p,
-                    Err(_) => continue,
-                };
-                if path.exists() {
-                    any = true;
-                    add_existing(&mut ordered, &path, max_files)?;
-                    if max_files.is_some_and(|n| ordered.len() >= n) {
-                        break;
-                    }
-                }
+    // `~`-expansion matches the original `file-info` behavior: only apply it
+    // to non-glob inputs (legacy code expanded for the file/dir existence
+    // test but kept raw glob patterns). Glob-magic inputs therefore pass
+    // through verbatim, exactly as before.
+    let expanded: Vec<String> = sources
+        .iter()
+        .map(|s| {
+            if source::has_glob_magic(s) {
+                s.clone()
+            } else {
+                expand_home(s)
             }
-            if !any {
-                missing.push(source);
-            }
-            continue;
-        }
+        })
+        .collect();
 
-        missing.push(source);
-    }
-
-    Ok((ordered.into_values().collect(), missing))
-}
-
-fn add_existing(
-    ordered: &mut BTreeMap<PathBuf, PathBuf>,
-    path: &Path,
-    max_files: Option<usize>,
-) -> Result<()> {
-    if max_files.is_some_and(|n| ordered.len() >= n) {
-        return Ok(());
-    }
-
-    if path.is_file() {
-        let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        ordered.entry(resolved.clone()).or_insert(resolved);
-        return Ok(());
-    }
-
-    if path.is_dir() {
-        for entry in WalkDir::new(path)
-            .sort_by_file_name()
-            .into_iter()
-            .filter_map(Result::ok)
-        {
-            if max_files.is_some_and(|n| ordered.len() >= n) {
-                break;
-            }
-            let p = entry.path();
-            if p.is_file() {
-                let resolved = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-                ordered.entry(resolved.clone()).or_insert(resolved);
-            }
-        }
-    }
-
-    Ok(())
+    // Eagerly canonicalize paths inside `map` so the dedup key (Canonicalize)
+    // and downstream `inspect_file` operate on absolute, normalized paths.
+    // The wrapper sorts the result lexicographically afterward to preserve
+    // the previous BTreeMap output order.
+    let (paths, missing) = source::resolve(
+        &expanded,
+        SourcePolicy {
+            root: Path::new("."),
+            gitignore: GitignoreMode::Off,
+            accept_file: &|_| true,
+            filter_explicit_file: false,
+            filter_glob: false,
+            dedup: Dedup::Canonicalize,
+            max_files,
+            map: &|p, _| Some(p.canonicalize().unwrap_or(p)),
+        },
+    )?;
+    Ok((paths, missing))
 }
 
 fn read_sample(path: &Path, size: u64) -> Result<Vec<u8>> {
@@ -231,23 +175,14 @@ fn inspect_file(path: &Path) -> Result<FileInfo> {
 }
 
 fn detect_bom(data: &[u8]) -> (String, Option<String>) {
-    // Check longer BOMs first: UTF-32 LE starts with the UTF-16 LE prefix.
-    if data.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        return ("utf-8-sig".into(), Some("utf-8-sig".into()));
+    let bom = crate::runtime::encoding::detect_bom(data);
+    match bom {
+        crate::runtime::encoding::Bom::None => ("none".into(), None),
+        other => {
+            let label = other.label().to_string();
+            (label.clone(), Some(label))
+        }
     }
-    if data.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) {
-        return ("utf-32-le".into(), Some("utf-32-le".into()));
-    }
-    if data.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
-        return ("utf-32-be".into(), Some("utf-32-be".into()));
-    }
-    if data.starts_with(&[0xFF, 0xFE]) {
-        return ("utf-16-le".into(), Some("utf-16-le".into()));
-    }
-    if data.starts_with(&[0xFE, 0xFF]) {
-        return ("utf-16-be".into(), Some("utf-16-be".into()));
-    }
-    ("none".into(), None)
 }
 
 fn is_binary_data(data: &[u8], bom_encoding: Option<&str>) -> bool {
@@ -295,7 +230,9 @@ fn detect_newline(data: &[u8], encoding: &str, is_binary: bool) -> String {
     }
 
     if let Some(text) = decode_sample_text(data, encoding) {
-        return detect_newline_text(&text);
+        return crate::runtime::encoding::detect_newline_text(&text)
+            .label()
+            .into();
     }
 
     "unknown".into()
@@ -323,36 +260,6 @@ fn decode_sample_text(data: &[u8], encoding: &str) -> Option<String> {
         }
         "latin1" => Some(data.iter().map(|b| *b as char).collect()),
         _ => None,
-    }
-}
-
-fn detect_newline_text(text: &str) -> String {
-    if text.is_empty() {
-        return "none".into();
-    }
-
-    let raw = text.as_bytes();
-    let has_crlf = raw.windows(2).any(|w| w == b"\r\n");
-    let mut stripped = Vec::with_capacity(raw.len());
-    let mut i = 0;
-    while i < raw.len() {
-        if i + 1 < raw.len() && raw[i] == b'\r' && raw[i + 1] == b'\n' {
-            i += 2;
-        } else {
-            stripped.push(raw[i]);
-            i += 1;
-        }
-    }
-
-    let has_lf = stripped.contains(&b'\n');
-    let has_cr = stripped.contains(&b'\r');
-
-    match (has_crlf, has_lf, has_cr) {
-        (true, false, false) => "crlf".into(),
-        (false, true, false) => "lf".into(),
-        (false, false, true) => "cr".into(),
-        (false, false, false) => "none".into(),
-        _ => "mixed".into(),
     }
 }
 
@@ -456,14 +363,7 @@ fn count_text_lines(text: &str) -> usize {
 
 fn display_path(path: &Path) -> String {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    path.strip_prefix(&cwd)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
-fn has_glob_magic(source: &str) -> bool {
-    source.chars().any(|c| GLOB_CHARS.contains(&c))
+    crate::runtime::pathutil::display_relative(path, &cwd)
 }
 
 fn expand_home(source: &str) -> String {

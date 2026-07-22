@@ -82,16 +82,12 @@ pub fn run(args: DataTocArgs, ctx: &CommandContext) -> Result<u8> {
 
     match ctx.print {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: true,
-                command: "data-toc",
-                data,
-                warnings,
-                meta: serde_json::json!({
+            let payload = Envelope::new("data-toc", data)
+                .with_warnings(warnings)
+                .with_meta(serde_json::json!({
                     "budget": args.budget,
                     "schema_version": 1,
-                }),
-            };
+                }));
             output::print_json(&payload)?;
         }
         _ => render::print_compact(&data, &warnings, args.budget),

@@ -32,13 +32,7 @@ pub fn run(ctx: &CommandContext) -> Result<u8> {
                 second: naive.second() as u8,
                 timezone: offset.to_string(),
             };
-            let payload = Envelope {
-                ok: true,
-                command: "now",
-                data,
-                warnings: vec![],
-                meta: serde_json::json!({}),
-            };
+            let payload = Envelope::new("now", data);
             output::print_json(&payload)?;
         }
         _ => {

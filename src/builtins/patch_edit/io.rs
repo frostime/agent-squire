@@ -17,7 +17,7 @@ pub enum TextEncoding {
 pub fn read_target_text_with_encoding(path: &Path) -> Result<(String, TextEncoding)> {
     let raw = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
 
-    if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
+    if crate::runtime::encoding::has_utf8_bom(&raw) {
         let text = String::from_utf8_lossy(&raw[3..]).into_owned();
         return Ok((text, TextEncoding::Utf8Sig));
     }

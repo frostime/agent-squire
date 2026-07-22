@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Args;
-use glob::glob;
 use serde::Serialize;
 
+use crate::builtins::source::{self, Dedup, GitignoreMode, SourcePolicy};
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
@@ -69,7 +69,7 @@ pub fn run(args: TocArgs, ctx: &CommandContext) -> Result<u8> {
     } else {
         args.sources
     };
-    let (files, missing) = resolve_sources(&sources)?;
+    let (files, missing) = resolve_sources(&sources, &ctx.cwd)?;
 
     if files.is_empty() {
         if !missing.is_empty() {
@@ -104,13 +104,9 @@ pub fn run(args: TocArgs, ctx: &CommandContext) -> Result<u8> {
                 total_headings: results.iter().map(|r| r.headings.len()).sum(),
                 files: results,
             };
-            let payload = Envelope {
-                ok: true,
-                command: "toc",
-                data,
-                warnings,
-                meta: serde_json::json!({ "depth": depth }),
-            };
+            let payload = Envelope::new("toc", data)
+                .with_warnings(warnings)
+                .with_meta(serde_json::json!({ "depth": depth }));
             output::print_json(&payload)?;
         }
         _ => {
@@ -140,43 +136,21 @@ pub fn run(args: TocArgs, ctx: &CommandContext) -> Result<u8> {
     Ok(0)
 }
 
-const GLOB_CHARS: &[char] = &['*', '?', '['];
-
-fn resolve_sources(sources: &[String]) -> Result<(Vec<PathBuf>, Vec<String>)> {
-    let mut files = Vec::new();
-    let mut missing = Vec::new();
-
-    for source in sources {
-        let p = PathBuf::from(source);
-        if p.is_dir() {
-            let mut found = walkdir::WalkDir::new(&p)
-                .sort_by_file_name()
-                .into_iter()
-                .filter_map(Result::ok)
-                .map(|entry| entry.into_path())
-                .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "md"))
-                .collect::<Vec<_>>();
-            found.sort();
-            files.extend(found);
-        } else if p.is_file() {
-            files.push(p);
-        } else if source.contains(GLOB_CHARS) {
-            let matched: Vec<_> = glob(source)
-                .with_context(|| format!("invalid glob pattern: {source}"))?
-                .filter_map(Result::ok)
-                .filter(|p| p.is_file())
-                .collect();
-            if matched.is_empty() {
-                missing.push(source.clone());
-            } else {
-                files.extend(matched);
-            }
-        } else {
-            missing.push(source.clone());
-        }
-    }
-
-    Ok((files, missing))
+fn resolve_sources(sources: &[String], cwd: &Path) -> Result<(Vec<PathBuf>, Vec<String>)> {
+    let md_only = |p: &Path| p.extension().is_some_and(|ext| ext == "md");
+    source::resolve(
+        sources,
+        SourcePolicy {
+            root: cwd,
+            gitignore: GitignoreMode::Off,
+            accept_file: &md_only,
+            filter_explicit_file: false,
+            filter_glob: false,
+            dedup: Dedup::None,
+            max_files: None,
+            map: &|p, _| Some(p),
+        },
+    )
 }
 
 fn analyze_file(path: &Path, max_depth: usize, base: Option<&Path>) -> FileToc {
@@ -210,24 +184,9 @@ fn analyze_file(path: &Path, max_depth: usize, base: Option<&Path>) -> FileToc {
 
 fn parse_headings(content: &str, max_depth: usize) -> Vec<Heading> {
     let mut headings = Vec::new();
-    let mut in_fence = false;
-    let mut fence_marker = "";
 
-    for (idx, line) in content.lines().enumerate() {
-        let stripped = line.trim();
-
-        if stripped.starts_with("```") || stripped.starts_with("~~~") {
-            let marker = &stripped[..3];
-            if !in_fence {
-                in_fence = true;
-                fence_marker = marker;
-            } else if marker == fence_marker {
-                in_fence = false;
-            }
-            continue;
-        }
-
-        if in_fence || !line.starts_with('#') {
+    for (line_num, line) in crate::builtins::markdown::iter_prose_lines(content) {
+        if !line.starts_with('#') {
             continue;
         }
 
@@ -244,7 +203,7 @@ fn parse_headings(content: &str, max_depth: usize) -> Vec<Heading> {
         headings.push(Heading {
             level,
             text: text.to_string(),
-            line_num: idx + 1,
+            line_num,
         });
     }
 

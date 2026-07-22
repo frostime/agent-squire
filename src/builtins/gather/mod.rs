@@ -386,13 +386,8 @@ fn print_success(status: &ComposeStatus, print: PrintMode, cwd: &Path) -> Result
 
     match print {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: true,
-                command: "gather",
-                data: status,
-                warnings: vec![],
-                meta: serde_json::to_value(GatherMeta::new(cwd))?,
-            };
+            let payload = Envelope::new("gather", status)
+                .with_meta(serde_json::to_value(GatherMeta::new(cwd))?);
             runtime_output::print_json(&payload)?;
         }
         _ => {

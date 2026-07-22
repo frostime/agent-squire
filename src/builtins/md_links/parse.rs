@@ -4,31 +4,9 @@ use super::model::{LinkKind, RawLink};
 
 pub fn parse_links(content: &str) -> Vec<RawLink> {
     let mut links = Vec::new();
-    let mut in_fence = false;
-    let mut fence_marker = "";
-
-    for (idx, line) in content.lines().enumerate() {
-        let line_num = idx + 1;
-        let stripped = line.trim_start();
-
-        if stripped.starts_with("```") || stripped.starts_with("~~~") {
-            let marker = &stripped[..3];
-            if !in_fence {
-                in_fence = true;
-                fence_marker = marker;
-            } else if marker == fence_marker {
-                in_fence = false;
-            }
-            continue;
-        }
-
-        if in_fence {
-            continue;
-        }
-
+    for (line_num, line) in crate::builtins::markdown::iter_prose_lines(content) {
         scan_line(line, line_num, &mut links);
     }
-
     links
 }
 

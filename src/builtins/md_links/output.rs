@@ -7,13 +7,9 @@ use super::model::{MdLinksData, TargetType};
 pub fn print(data: MdLinksData, warnings: Vec<String>, cwd: String, mode: PrintMode) -> Result<()> {
     match mode {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: true,
-                command: "md-links",
-                data,
-                warnings,
-                meta: serde_json::json!({ "cwd": cwd }),
-            };
+            let payload = Envelope::new("md-links", data)
+                .with_warnings(warnings)
+                .with_meta(serde_json::json!({ "cwd": cwd }));
             output::print_json(&payload)?;
         }
         _ => print_compact(&data, &warnings),

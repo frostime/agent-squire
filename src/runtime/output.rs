@@ -32,6 +32,39 @@ pub struct Envelope<T: Serialize> {
     pub meta: serde_json::Value,
 }
 
+impl<T: Serialize> Envelope<T> {
+    /// Construct a successful envelope for `command` carrying `data`, with empty
+    /// warnings and empty meta. Use the builder methods to attach warnings or
+    /// meta when needed.
+    pub fn new(command: &'static str, data: T) -> Self {
+        Self {
+            ok: true,
+            command,
+            data,
+            warnings: Vec::new(),
+            meta: serde_json::json!({}),
+        }
+    }
+
+    pub fn with_warnings(mut self, warnings: Vec<String>) -> Self {
+        self.warnings = warnings;
+        self
+    }
+
+    /// Override the `ok` flag. `Envelope::new` defaults to `true`; use this for
+    /// commands whose success is data-dependent (e.g. patch-edit reports `ok`
+    /// based on per-file failures, rearrange error envelopes report `false`).
+    pub fn with_ok(mut self, ok: bool) -> Self {
+        self.ok = ok;
+        self
+    }
+
+    pub fn with_meta(mut self, meta: serde_json::Value) -> Self {
+        self.meta = meta;
+        self
+    }
+}
+
 pub fn print_json<T: Serialize>(payload: &T) -> anyhow::Result<()> {
     println!("{}", serde_json::to_string_pretty(payload)?);
     Ok(())

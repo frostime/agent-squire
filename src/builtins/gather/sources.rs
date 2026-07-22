@@ -4,13 +4,7 @@ use anyhow::{Context, Result, bail};
 use glob::glob;
 use ignore::WalkBuilder;
 
-const ALWAYS_SKIP: &[&str] = &[
-    ".git",
-    "__pycache__",
-    "node_modules",
-    ".pytest_cache",
-    ".mypy_cache",
-];
+use crate::builtins::source::ALWAYS_SKIP;
 
 pub fn expand_dir(cwd: &Path, path: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
     let root = resolve_path(cwd, path);

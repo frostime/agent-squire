@@ -11,7 +11,7 @@ pub fn decode_text(raw: &[u8], label: &str) -> ComposeResult<String> {
         ));
     }
 
-    if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
+    if crate::runtime::encoding::has_utf8_bom(raw) {
         return String::from_utf8(raw[3..].to_vec()).map_err(|_| {
             ComposeError::new(
                 "invalid_encoding",

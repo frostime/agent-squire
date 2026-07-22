@@ -1,16 +1,14 @@
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Args;
-use glob::glob;
-use ignore::WalkBuilder;
 use serde::Serialize;
 
 use crate::builtins::md_links::graph;
 use crate::builtins::md_links::model::{LinkKind, SourceFile, TargetType};
 use crate::builtins::md_links::sources::display_path;
+use crate::builtins::source::{self, Dedup, GitignoreMode, MARKDOWN_EXTENSIONS, SourcePolicy};
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
@@ -73,16 +71,6 @@ struct FocusPage {
     path: String,
     exists: bool,
 }
-
-const GLOB_CHARS: &[char] = &['*', '?', '['];
-const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown"];
-const ALWAYS_SKIP: &[&str] = &[
-    ".git",
-    "__pycache__",
-    "node_modules",
-    ".pytest_cache",
-    ".mypy_cache",
-];
 
 pub fn run(args: MdBacklinksArgs, ctx: &CommandContext) -> Result<u8> {
     let root = ctx.cwd.clone();
@@ -158,90 +146,44 @@ fn discover_corpus(
     root: &Path,
     respect_gitignore: bool,
 ) -> Result<(Vec<SourceFile>, Vec<String>)> {
-    let mut files = BTreeMap::new();
-    let mut warnings = Vec::new();
-
-    for source in from {
-        let path = rooted_path(source, root);
-        if path.is_file() {
-            if is_markdown_file(&path) {
-                insert_source(&mut files, path, root);
+    // Corpus is keyed by display path so two inputs resolving to the same path
+    // (e.g. an explicit file plus a dir walk) collapse to one SourceFile.
+    let (files, unresolved) = source::resolve(
+        from,
+        SourcePolicy {
+            root,
+            gitignore: if respect_gitignore {
+                GitignoreMode::Respect
             } else {
-                warnings.push(format!("non-markdown corpus file skipped: {source}"));
-            }
-        } else if path.is_dir() {
-            for file in walk_markdown_dir(&path, respect_gitignore)? {
-                insert_source(&mut files, file, root);
-            }
-        } else if source.contains(GLOB_CHARS) {
-            let pattern = rooted_path(source, root)
-                .to_string_lossy()
-                .replace('\\', "/");
-            let mut matched = glob(&pattern)
-                .with_context(|| format!("invalid glob pattern: {source}"))?
-                .filter_map(Result::ok)
-                .filter(|path| path.is_file() && is_markdown_file(path))
-                .collect::<Vec<_>>();
-            matched.sort();
-            if matched.is_empty() {
-                warnings.push(format!("corpus source not found: {source}"));
-            } else {
-                for file in matched {
-                    insert_source(&mut files, file, root);
-                }
-            }
-        } else {
-            warnings.push(format!("corpus source not found: {source}"));
-        }
-    }
+                GitignoreMode::Off
+            },
+            accept_file: &source::is_markdown_file,
+            filter_explicit_file: true,
+            filter_glob: true,
+            dedup: Dedup::ByKey(&display_path_key),
+            max_files: None,
+            map: &|p, root| {
+                let display = display_path(&p, root);
+                Some(SourceFile {
+                    path: p,
+                    display_path: display,
+                })
+            },
+        },
+    )?;
 
-    Ok((files.into_values().collect(), warnings))
+    // Consolidate the reject/not-found reasons into a single warning wording.
+    // The previous implementation distinguished "non-markdown corpus file
+    // skipped" from "corpus source not found"; both now surface identically.
+    let warnings = unresolved
+        .iter()
+        .map(|source| format!("corpus source not found: {source}"))
+        .collect();
+    Ok((files, warnings))
 }
 
-fn rooted_path(source: &str, root: &Path) -> PathBuf {
-    let path = PathBuf::from(source);
-    if path.is_absolute() {
-        path
-    } else {
-        root.join(path)
-    }
-}
-
-fn walk_markdown_dir(root: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
-    let mut walker = WalkBuilder::new(root);
-    walker
-        .hidden(false)
-        .git_ignore(respect_gitignore)
-        .git_global(respect_gitignore)
-        .git_exclude(respect_gitignore)
-        .sort_by_file_name(sort_entry_name);
-
-    walker.filter_entry(move |entry| {
-        if !respect_gitignore {
-            return true;
-        }
-        let name = entry.file_name().to_str().unwrap_or("");
-        !ALWAYS_SKIP.contains(&name)
-    });
-
-    let mut files = Vec::new();
-    for entry in walker.build() {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let path = entry.path();
-        if path.is_file() && is_markdown_file(path) {
-            files.push(path.to_path_buf());
-        }
-    }
-    files.sort();
-    Ok(files)
-}
-
-fn insert_source(files: &mut BTreeMap<String, SourceFile>, path: PathBuf, root: &Path) {
-    let display_path = display_path(&path, root);
-    files.insert(display_path.clone(), SourceFile { path, display_path });
+fn display_path_key(path: &Path, root: &Path) -> String {
+    display_path(path, root)
 }
 
 fn normalize_focus_page(input: &str, root: &Path) -> FocusPage {
@@ -286,21 +228,8 @@ fn normalized_path_key(path: &str) -> String {
     parts.join("/")
 }
 
-fn is_markdown_file(path: &Path) -> bool {
-    let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
-        return false;
-    };
-    MARKDOWN_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str())
-}
-
 fn strip_fragment_query(target: &str) -> &str {
     target.split(['#', '?']).next().unwrap_or(target).trim()
-}
-
-fn sort_entry_name(a: &OsStr, b: &OsStr) -> std::cmp::Ordering {
-    let a_s = a.to_string_lossy().to_lowercase();
-    let b_s = b.to_string_lossy().to_lowercase();
-    a_s.cmp(&b_s)
 }
 
 fn print(
@@ -313,19 +242,15 @@ fn print(
 ) -> Result<()> {
     match mode {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: true,
-                command: "md-backlinks",
-                data,
-                warnings,
-                meta: serde_json::json!({
+            let payload = Envelope::new("md-backlinks", data)
+                .with_warnings(warnings)
+                .with_meta(serde_json::json!({
                     "cwd": root_display(root),
                     "from": from,
                     "respect_gitignore": respect_gitignore,
                     "builtin_skip": respect_gitignore,
                     "extensions": MARKDOWN_EXTENSIONS,
-                }),
-            };
+                }));
             output::print_json(&payload)?;
         }
         _ => print_compact(&data, &warnings, respect_gitignore),

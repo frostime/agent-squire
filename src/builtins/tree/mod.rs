@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -7,6 +6,7 @@ use clap::Args;
 use ignore::WalkBuilder;
 use serde::Serialize;
 
+use crate::builtins::source::{ALWAYS_SKIP, sort_entry_name};
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
 
@@ -142,14 +142,6 @@ struct Stats {
     directories: usize,
     total_size: u64,
 }
-
-const ALWAYS_SKIP: &[&str] = &[
-    ".git",
-    "__pycache__",
-    "node_modules",
-    ".pytest_cache",
-    ".mypy_cache",
-];
 
 pub fn run(args: TreeArgs, ctx: &CommandContext) -> Result<u8> {
     if args.prompt {
@@ -350,12 +342,6 @@ fn build_tree(root: &Path, args: &TreeArgs) -> Result<TreeNode> {
     })
 }
 
-fn sort_entry_name(a: &OsStr, b: &OsStr) -> std::cmp::Ordering {
-    let a_s = a.to_string_lossy().to_lowercase();
-    let b_s = b.to_string_lossy().to_lowercase();
-    a_s.cmp(&b_s)
-}
-
 fn compute_stats(node: &TreeNode) -> Stats {
     let mut stats = Stats {
         files: 0,
@@ -455,13 +441,7 @@ fn print_json_output(outputs: &[(String, Vec<String>, Stats)]) -> Result<()> {
             lines: lines.clone(),
             stats: stats.clone(),
         };
-        let payload = Envelope {
-            ok: true,
-            command: "tree",
-            data,
-            warnings: vec![],
-            meta: serde_json::json!({}),
-        };
+        let payload = Envelope::new("tree", data);
         output::print_json(&payload)?;
     } else {
         let trees: Vec<TreeData> = outputs
@@ -472,13 +452,7 @@ fn print_json_output(outputs: &[(String, Vec<String>, Stats)]) -> Result<()> {
                 stats: stats.clone(),
             })
             .collect();
-        let payload = Envelope {
-            ok: true,
-            command: "tree",
-            data: trees,
-            warnings: vec![],
-            meta: serde_json::json!({}),
-        };
+        let payload = Envelope::new("tree", trees);
         output::print_json(&payload)?;
     }
     Ok(())

@@ -12,17 +12,16 @@ struct PatchData<'a> {
 
 pub fn print_json(results: &[PatchApplyResult], dry_run: bool) -> anyhow::Result<()> {
     let failed_count = results.iter().filter(|r| !r.success).count();
-    let payload = Envelope {
-        ok: failed_count == 0,
-        command: "patch-edit",
-        data: PatchData {
+    let payload = Envelope::new(
+        "patch-edit",
+        PatchData {
             results,
             count: results.len(),
             failed_count,
         },
-        warnings: vec![],
-        meta: serde_json::json!({ "dryRun": dry_run }),
-    };
+    )
+    .with_ok(failed_count == 0)
+    .with_meta(serde_json::json!({ "dryRun": dry_run }));
     output::print_json(&payload)
 }
 

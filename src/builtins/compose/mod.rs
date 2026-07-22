@@ -299,15 +299,13 @@ fn load_template(args: &ComposeArgs) -> model::ComposeResult<String> {
 fn print_sources(sources: &[SourceInfo], print: PrintMode, cwd: &std::path::Path) -> Result<()> {
     match print {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: true,
-                command: "compose",
-                data: SourceListData {
+            let payload = Envelope::new(
+                "compose",
+                SourceListData {
                     sources: sources.to_vec(),
                 },
-                warnings: vec![],
-                meta: serde_json::to_value(ComposeMeta::new(cwd))?,
-            };
+            )
+            .with_meta(serde_json::to_value(ComposeMeta::new(cwd))?);
             runtime_output::print_json(&payload)?;
         }
         _ => {

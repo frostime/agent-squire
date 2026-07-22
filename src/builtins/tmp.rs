@@ -125,13 +125,7 @@ pub fn run(args: TmpArgs, ctx: &CommandContext) -> Result<u8> {
                 kind: kind.to_string(),
                 root: root.to_string_lossy().to_string(),
             };
-            let payload = Envelope {
-                ok: true,
-                command: "tmp",
-                data,
-                warnings: vec![],
-                meta: serde_json::json!({}),
-            };
+            let payload = Envelope::new("tmp", data);
             output::print_json(&payload)?;
         }
         _ => {

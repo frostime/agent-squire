@@ -91,13 +91,8 @@ pub fn print_success(status: &ComposeStatus, print: PrintMode, cwd: &Path) -> Re
 
     match print {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: true,
-                command: "compose",
-                data: status,
-                warnings: vec![],
-                meta: serde_json::to_value(ComposeMeta::new(cwd))?,
-            };
+            let payload = Envelope::new("compose", status)
+                .with_meta(serde_json::to_value(ComposeMeta::new(cwd))?);
             output::print_json(&payload)?;
         }
         _ => {
@@ -112,13 +107,11 @@ pub fn print_success(status: &ComposeStatus, print: PrintMode, cwd: &Path) -> Re
 pub fn print_check_ok(print: PrintMode, sources: usize, cwd: &Path) -> Result<()> {
     match print {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: true,
-                command: "compose",
-                data: serde_json::json!({ "valid": true, "sources": sources }),
-                warnings: vec![],
-                meta: serde_json::to_value(ComposeMeta::new(cwd))?,
-            };
+            let payload = Envelope::new(
+                "compose",
+                serde_json::json!({ "valid": true, "sources": sources }),
+            )
+            .with_meta(serde_json::to_value(ComposeMeta::new(cwd))?);
             output::print_json(&payload)?;
         }
         _ => println!("ok: template valid ({sources} sources)"),

@@ -223,13 +223,7 @@ fn short_uuid() -> String {
 fn print_img_data(data: &ImgData, ctx: &CommandContext) -> Result<()> {
     match ctx.print {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: true,
-                command: "img",
-                data,
-                warnings: vec![],
-                meta: serde_json::json!({}),
-            };
+            let payload = Envelope::new("img", data);
             output::print_json(&payload)?;
         }
         _ => {

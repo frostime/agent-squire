@@ -277,13 +277,8 @@ pub fn run(args: ReadRangeArgs, ctx: &CommandContext) -> Result<u8> {
 
     match ctx.print {
         PrintMode::Json => {
-            let payload = Envelope {
-                ok: true,
-                command: "read-range",
-                data: ReadRangeData { file, slices },
-                warnings,
-                meta: serde_json::json!({}),
-            };
+            let payload =
+                Envelope::new("read-range", ReadRangeData { file, slices }).with_warnings(warnings);
             output::print_json(&payload)?;
         }
         _ => {
@@ -391,39 +386,43 @@ fn read_text_file(path: &Path) -> Result<TextFile> {
 // identifies endianness; UTF-32 BOMs are recognized but unsupported. NUL-containing
 // files without a supported text BOM are treated as binary.
 fn decode_text(raw: &[u8]) -> Result<(String, String)> {
-    if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        let text = std::str::from_utf8(&raw[3..]).context("invalid utf-8")?;
-        return Ok(("utf-8-sig".into(), text.to_string()));
-    }
-    // Check UTF-32 before UTF-16: UTF-32 LE starts with the UTF-16 LE prefix.
-    if raw.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) || raw.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
-        bail!("utf-32 files are not supported");
-    }
-    if raw.starts_with(&[0xFF, 0xFE]) {
-        let (text, _, had_errors) = UTF_16LE.decode(&raw[2..]);
-        if had_errors {
-            bail!("invalid utf-16-le");
+    use crate::runtime::encoding::{Bom, detect_bom};
+    match detect_bom(raw) {
+        Bom::Utf8Sig => {
+            let text = std::str::from_utf8(&raw[3..]).context("invalid utf-8")?;
+            Ok(("utf-8-sig".into(), text.to_string()))
         }
-        return Ok(("utf-16-le".into(), text.into_owned()));
-    }
-    if raw.starts_with(&[0xFE, 0xFF]) {
-        let (text, _, had_errors) = UTF_16BE.decode(&raw[2..]);
-        if had_errors {
-            bail!("invalid utf-16-be");
+        Bom::Utf32Le | Bom::Utf32Be => {
+            bail!("utf-32 files are not supported");
         }
-        return Ok(("utf-16-be".into(), text.into_owned()));
+        Bom::Utf16Le => {
+            let (text, _, had_errors) = UTF_16LE.decode(&raw[2..]);
+            if had_errors {
+                bail!("invalid utf-16-le");
+            }
+            Ok(("utf-16-le".into(), text.into_owned()))
+        }
+        Bom::Utf16Be => {
+            let (text, _, had_errors) = UTF_16BE.decode(&raw[2..]);
+            if had_errors {
+                bail!("invalid utf-16-be");
+            }
+            Ok(("utf-16-be".into(), text.into_owned()))
+        }
+        Bom::None => {
+            if raw.contains(&0) {
+                bail!("binary files are not supported; utf-16 requires a BOM");
+            }
+            if let Ok(text) = std::str::from_utf8(raw) {
+                return Ok(("utf-8".into(), text.to_string()));
+            }
+            let (decoded, _, had_errors) = GBK.decode(raw);
+            if !had_errors {
+                return Ok(("gbk".into(), decoded.into_owned()));
+            }
+            Ok(("latin1".into(), raw.iter().map(|b| *b as char).collect()))
+        }
     }
-    if raw.contains(&0) {
-        bail!("binary files are not supported; utf-16 requires a BOM");
-    }
-    if let Ok(text) = std::str::from_utf8(raw) {
-        return Ok(("utf-8".into(), text.to_string()));
-    }
-    let (decoded, _, had_errors) = GBK.decode(raw);
-    if !had_errors {
-        return Ok(("gbk".into(), decoded.into_owned()));
-    }
-    Ok(("latin1".into(), raw.iter().map(|b| *b as char).collect()))
 }
 
 // SPEC: Logical line numbers follow decoded text line separators. Treat CRLF as
@@ -464,30 +463,9 @@ fn split_lines(text: &str) -> Vec<String> {
 // SPEC: Newline metadata is detected after decoding, not from raw bytes, so
 // UTF-16 CRLF is classified the same way as UTF-8/GBK CRLF.
 fn detect_newline(text: &str) -> String {
-    if text.is_empty() {
-        return "none".into();
-    }
-    let raw = text.as_bytes();
-    let has_crlf = raw.windows(2).any(|w| w == b"\r\n");
-    let mut stripped = Vec::with_capacity(raw.len());
-    let mut i = 0;
-    while i < raw.len() {
-        if i + 1 < raw.len() && raw[i] == b'\r' && raw[i + 1] == b'\n' {
-            i += 2;
-        } else {
-            stripped.push(raw[i]);
-            i += 1;
-        }
-    }
-    let has_lf = stripped.contains(&b'\n');
-    let has_cr = stripped.contains(&b'\r');
-    match (has_crlf, has_lf, has_cr) {
-        (true, false, false) => "crlf".into(),
-        (false, true, false) => "lf".into(),
-        (false, false, true) => "cr".into(),
-        (false, false, false) => "none".into(),
-        _ => "mixed".into(),
-    }
+    crate::runtime::encoding::detect_newline_text(text)
+        .label()
+        .into()
 }
 
 fn print_compact(file: &ReadRangeFile, slices: &[ReadRangeSlice], no_number: &bool) {
@@ -517,8 +495,5 @@ fn print_compact(file: &ReadRangeFile, slices: &[ReadRangeSlice], no_number: &bo
 
 fn display_path(path: &Path) -> String {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    path.strip_prefix(&cwd)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
+    crate::runtime::pathutil::display_relative(path, &cwd)
 }

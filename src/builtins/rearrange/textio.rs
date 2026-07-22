@@ -140,7 +140,7 @@ pub fn delete_file(path: &Path) -> Result<()> {
 }
 
 fn decode(raw: &[u8]) -> std::result::Result<(String, Encoding), String> {
-    if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
+    if crate::runtime::encoding::has_utf8_bom(raw) {
         let text = std::str::from_utf8(&raw[3..])
             .map_err(|err| format!("invalid utf-8 BOM text: {err}"))?;
         return Ok((text.to_string(), Encoding::Utf8Bom));
