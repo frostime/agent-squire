@@ -1,6 +1,6 @@
-# Runtime Encoding Primitives
+# Shared Encoding Primitives
 
-Track knowledge that `src/runtime/encoding.rs` alone cannot adequately convey.
+Track knowledge that `src/shared/encoding.rs` alone cannot adequately convey.
 
 ## Purpose
 

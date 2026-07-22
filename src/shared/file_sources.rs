@@ -310,7 +310,7 @@ mod tests {
     fn display(paths: &[PathBuf], root: &Path) -> Vec<String> {
         let mut v: Vec<String> = paths
             .iter()
-            .map(|p| crate::runtime::pathutil::display_relative_fallback(p, root))
+            .map(|p| crate::shared::path::display_relative_fallback(p, root))
             .collect();
         v.sort();
         v

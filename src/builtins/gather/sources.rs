@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use glob::glob;
 use ignore::WalkBuilder;
 
-use crate::builtins::source::ALWAYS_SKIP;
+use crate::shared::file_sources::ALWAYS_SKIP;
 
 pub fn expand_dir(cwd: &Path, path: &Path, respect_gitignore: bool) -> Result<Vec<PathBuf>> {
     let root = resolve_path(cwd, path);

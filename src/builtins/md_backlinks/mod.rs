@@ -8,9 +8,11 @@ use serde::Serialize;
 use crate::builtins::md_links::graph;
 use crate::builtins::md_links::model::{LinkKind, SourceFile, TargetType};
 use crate::builtins::md_links::sources::display_path;
-use crate::builtins::source::{self, Dedup, GitignoreMode, MARKDOWN_EXTENSIONS, SourcePolicy};
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
+use crate::shared::file_sources::{
+    self as source, Dedup, GitignoreMode, MARKDOWN_EXTENSIONS, SourcePolicy,
+};
 
 #[derive(Args, Debug)]
 #[command(

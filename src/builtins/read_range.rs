@@ -386,7 +386,7 @@ fn read_text_file(path: &Path) -> Result<TextFile> {
 // identifies endianness; UTF-32 BOMs are recognized but unsupported. NUL-containing
 // files without a supported text BOM are treated as binary.
 fn decode_text(raw: &[u8]) -> Result<(String, String)> {
-    use crate::runtime::encoding::{Bom, detect_bom};
+    use crate::shared::encoding::{Bom, detect_bom};
     match detect_bom(raw) {
         Bom::Utf8Sig => {
             let text = std::str::from_utf8(&raw[3..]).context("invalid utf-8")?;
@@ -463,7 +463,7 @@ fn split_lines(text: &str) -> Vec<String> {
 // SPEC: Newline metadata is detected after decoding, not from raw bytes, so
 // UTF-16 CRLF is classified the same way as UTF-8/GBK CRLF.
 fn detect_newline(text: &str) -> String {
-    crate::runtime::encoding::detect_newline_text(text)
+    crate::shared::encoding::detect_newline_text(text)
         .label()
         .into()
 }
@@ -495,5 +495,5 @@ fn print_compact(file: &ReadRangeFile, slices: &[ReadRangeSlice], no_number: &bo
 
 fn display_path(path: &Path) -> String {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    crate::runtime::pathutil::display_relative(path, &cwd)
+    crate::shared::path::display_relative(path, &cwd)
 }

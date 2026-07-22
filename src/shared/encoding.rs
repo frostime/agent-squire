@@ -1,6 +1,6 @@
 //! Encoding-adjacent primitives shared by builtins that process text files.
 //!
-//! See `.sspec/spec-docs/runtime-encoding.md` for the policy matrix each
+//! See `.sspec/spec-docs/shared-encoding.md` for the policy matrix each
 //! builtin follows, why the high-level decode entries remain per-builtin, and
 //! what this module intentionally does NOT consolidate.
 

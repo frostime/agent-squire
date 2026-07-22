@@ -4,9 +4,9 @@ use anyhow::Result;
 use clap::Args;
 use serde::Serialize;
 
-use crate::builtins::source::{self, Dedup, GitignoreMode, SourcePolicy};
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
+use crate::shared::file_sources::{self as source, Dedup, GitignoreMode, SourcePolicy};
 
 #[derive(Args, Debug)]
 #[command(
@@ -185,7 +185,7 @@ fn analyze_file(path: &Path, max_depth: usize, base: Option<&Path>) -> FileToc {
 fn parse_headings(content: &str, max_depth: usize) -> Vec<Heading> {
     let mut headings = Vec::new();
 
-    for (line_num, line) in crate::builtins::markdown::iter_prose_lines(content) {
+    for (line_num, line) in crate::shared::markdown::iter_prose_lines(content) {
         if !line.starts_with('#') {
             continue;
         }

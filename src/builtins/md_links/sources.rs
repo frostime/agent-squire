@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::builtins::source::{self, Dedup, GitignoreMode, SourcePolicy};
-use crate::runtime::pathutil;
+use crate::shared::file_sources::{self as source, Dedup, GitignoreMode, SourcePolicy};
+use crate::shared::path;
 
 use super::model::SourceFile;
 
@@ -35,7 +35,7 @@ fn source_file(path: PathBuf, root: &Path) -> SourceFile {
 /// Display a resolved path relative to the workspace root, with a
 /// canonicalize-based fallback so paths reached via relative inputs or
 /// symlinks still display relative to the workspace. Delegates to
-/// `pathutil::display_relative_fallback`.
+/// `path::display_relative_fallback`.
 pub fn display_path(path: &Path, workspace: &Path) -> String {
-    pathutil::display_relative_fallback(path, workspace)
+    path::display_relative_fallback(path, workspace)
 }

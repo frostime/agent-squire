@@ -11,7 +11,7 @@ pub fn decode_text(raw: &[u8], label: &str) -> ComposeResult<String> {
         ));
     }
 
-    if crate::runtime::encoding::has_utf8_bom(raw) {
+    if crate::shared::encoding::has_utf8_bom(raw) {
         return String::from_utf8(raw[3..].to_vec()).map_err(|_| {
             ComposeError::new(
                 "invalid_encoding",

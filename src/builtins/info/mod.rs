@@ -7,9 +7,9 @@ use clap::Args;
 use encoding_rs::{GBK, UTF_16BE, UTF_16LE};
 use serde::Serialize;
 
-use crate::builtins::source::{self, Dedup, GitignoreMode, SourcePolicy};
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
+use crate::shared::file_sources::{self as source, Dedup, GitignoreMode, SourcePolicy};
 
 const TEXT_SAMPLE_BYTES: u64 = 65_536;
 const LINE_COUNT_LIMIT: u64 = 1024 * 1024;
@@ -175,9 +175,9 @@ fn inspect_file(path: &Path) -> Result<FileInfo> {
 }
 
 fn detect_bom(data: &[u8]) -> (String, Option<String>) {
-    let bom = crate::runtime::encoding::detect_bom(data);
+    let bom = crate::shared::encoding::detect_bom(data);
     match bom {
-        crate::runtime::encoding::Bom::None => ("none".into(), None),
+        crate::shared::encoding::Bom::None => ("none".into(), None),
         other => {
             let label = other.label().to_string();
             (label.clone(), Some(label))
@@ -230,7 +230,7 @@ fn detect_newline(data: &[u8], encoding: &str, is_binary: bool) -> String {
     }
 
     if let Some(text) = decode_sample_text(data, encoding) {
-        return crate::runtime::encoding::detect_newline_text(&text)
+        return crate::shared::encoding::detect_newline_text(&text)
             .label()
             .into();
     }
@@ -363,7 +363,7 @@ fn count_text_lines(text: &str) -> usize {
 
 fn display_path(path: &Path) -> String {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    crate::runtime::pathutil::display_relative(path, &cwd)
+    crate::shared::path::display_relative(path, &cwd)
 }
 
 fn expand_home(source: &str) -> String {

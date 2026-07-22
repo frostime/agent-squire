@@ -1,6 +1,6 @@
 # Source Resolver
 
-Track knowledge that `src/builtins/source.rs` alone cannot adequately convey.
+Track knowledge that `src/shared/file_sources.rs` alone cannot adequately convey.
 
 ## Purpose
 

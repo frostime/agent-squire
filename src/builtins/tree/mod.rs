@@ -6,9 +6,9 @@ use clap::Args;
 use ignore::WalkBuilder;
 use serde::Serialize;
 
-use crate::builtins::source::{ALWAYS_SKIP, sort_entry_name};
 use crate::cli::CommandContext;
 use crate::runtime::output::{self, Envelope, PrintMode};
+use crate::shared::file_sources::{ALWAYS_SKIP, sort_entry_name};
 
 const TREE_PROMPT: &str = r#"# Squire file-tree guide
 

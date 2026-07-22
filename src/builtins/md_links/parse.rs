@@ -4,7 +4,7 @@ use super::model::{LinkKind, RawLink};
 
 pub fn parse_links(content: &str) -> Vec<RawLink> {
     let mut links = Vec::new();
-    for (line_num, line) in crate::builtins::markdown::iter_prose_lines(content) {
+    for (line_num, line) in crate::shared::markdown::iter_prose_lines(content) {
         scan_line(line, line_num, &mut links);
     }
     links
